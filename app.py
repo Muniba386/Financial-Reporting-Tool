@@ -1020,28 +1020,28 @@ if page == "Home":
         "and generate a client-ready ratio analysis report.",
     )
 
+    # A single row of compact tags rather than a paragraph + a 5-item
+    # bullet list re-explaining the same thing the subtitle above already
+    # said — three stacked layers of "what this tool does" was the main
+    # source of the page feeling padded/wordy before getting to the
+    # actual data-entry section below.
     st.markdown(
         f"""
-        <div style="color:{NAVY}; font-size:0.98rem; line-height:1.7;">
-        This tool calculates liquidity, profitability and leverage ratios from
-        almost any financial statement, then produces a polished PDF report.
-        It performs:
+        <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.4rem;">
+          {"".join(
+              f"<span style='background:{PANEL}; border:1px solid {BORDER}; color:{NAVY}; "
+              f"font-size:0.78rem; font-weight:600; padding:0.32rem 0.85rem; "
+              f"border-radius:20px; white-space:nowrap;'>{tag}</span>"
+              for tag in ["Liquidity", "Profitability", "Leverage", "Company Comparison", "PDF Report"]
+          )}
         </div>
-        <ul style="color:{MUTED}; font-size:0.95rem; line-height:1.9; margin-top:0.6rem;">
-          <li><b style="color:{NAVY};">Liquidity analysis</b> — current ratio and short-term financial health</li>
-          <li><b style="color:{NAVY};">Profitability analysis</b> — gross and net margins</li>
-          <li><b style="color:{NAVY};">Solvency analysis</b> — leverage and debt exposure</li>
-          <li><b style="color:{NAVY};">Company comparison</b> — two companies, side by side</li>
-          <li><b style="color:{NAVY};">Report generation</b> — a boardroom-ready PDF export</li>
-        </ul>
         """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        f"<div style='color:{MUTED}; font-size:0.85rem; margin-top:0.8rem;'>"
-        f"Developed by <b style='color:{NAVY};'>Muniba Ashraf</b> · "
-        f"BSc (Hons) Accounting &amp; Finance</div>",
+        f"<div style='color:{MUTED}; font-size:0.8rem; margin-top:1.1rem;'>"
+        f"Developed by Muniba Ashraf · BSc (Hons) Accounting &amp; Finance</div>",
         unsafe_allow_html=True,
     )
 
