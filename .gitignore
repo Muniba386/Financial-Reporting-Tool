@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.streamlit/secrets.toml
+
+# Generated at runtime — no need to version these
+financial_report.pdf
+chart.png
+chart2.png
