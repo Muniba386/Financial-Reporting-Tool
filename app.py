@@ -86,36 +86,59 @@ CATEGORY_COLORS = {
     "Returns": "#0C6860",
 }
 
-SEVERITY_BOX = {
-    "good": st.success,
-    "medium": st.info,
-    "bad": st.error,
-    "unavailable": st.warning,
+# Custom callout tones — deliberately not Streamlit's default st.success/
+# st.info/st.warning/st.error, whose stock green/blue/orange/red fill
+# colours clash with a navy-and-brass palette and read as generic
+# "Bootstrap alert" rather than part of a designed report. Every callout
+# in the app (insights, sample-data notices, extraction warnings) goes
+# through the same flat, left-bordered card so they feel like one system.
+TONE_COLORS = {
+    "good": "#1C6B43",
+    "medium": GOLD,
+    "bad": "#7A2E2E",
+    "unavailable": MUTED,
+    "info": NAVY_LIGHT,
+    "warning": "#9C6B2F",
 }
 
 
+def styled_note(text, tone):
+    color = TONE_COLORS.get(tone, MUTED)
+    st.markdown(
+        f"""
+        <div style="border-left:4px solid {color}; background:#FFFFFF;
+                    padding:0.85rem 1.15rem; border-radius:4px; margin-bottom:0.65rem;
+                    box-shadow:0 1px 3px rgba(10,25,48,0.06);">
+          <div style="color:{NAVY}; font-size:0.95rem; line-height:1.55;">{text}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_insight(result):
-    """result is a (message, severity) tuple from analysis.py. The box
-    colour always matches what the message says — a ratio that couldn't
-    be calculated is a warning, not a green success box, and a genuinely
-    weak ratio is a red flag, not a cheerful blue info box."""
+    """result is a (message, severity) tuple from analysis.py. The card's
+    accent colour always matches what the message says — a ratio that
+    couldn't be calculated is a neutral note, not a green success card,
+    and a genuinely weak ratio is a deep-red flag, not a cheerful one."""
     text, severity = result
-    SEVERITY_BOX.get(severity, st.info)(text)
+    styled_note(text, severity)
 
 
 def inject_custom_css():
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:wght@600;700&display=swap');
 
         html, body, [class*="css"] {{
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         }}
 
         h1, h2, h3 {{
-            font-family: 'Playfair Display', Georgia, serif !important;
+            font-family: 'Source Serif 4', Georgia, serif !important;
             color: {NAVY} !important;
+            font-weight: 700 !important;
         }}
 
         [data-testid="stAppViewContainer"] {{
@@ -163,26 +186,38 @@ def inject_custom_css():
         }}
         .st-key-topnav button p {{
             white-space: nowrap;
+            font-size: 0.92rem !important;
+            letter-spacing: 0.02em;
         }}
+        /* Underline-tab nav rather than filled pill buttons — reads as an
+           editorial/financial masthead rather than a row of app buttons. */
         .st-key-topnav button[kind="secondary"],
         .st-key-topnav [data-testid="stBaseButton-secondary"] {{
             background-color: transparent !important;
             color: {MUTED} !important;
-            border: 1px solid transparent !important;
+            border: none !important;
+            border-bottom: 2px solid transparent !important;
+            border-radius: 0 !important;
             box-shadow: none !important;
-            font-weight: 600 !important;
+            font-weight: 500 !important;
+            padding: 0.5rem 0.15rem 0.45rem 0.15rem !important;
         }}
         .st-key-topnav button[kind="secondary"]:hover,
         .st-key-topnav [data-testid="stBaseButton-secondary"]:hover {{
-            background-color: {PANEL} !important;
+            background-color: transparent !important;
             color: {NAVY} !important;
+            border-bottom: 2px solid {BORDER} !important;
         }}
         .st-key-topnav button[kind="primary"],
         .st-key-topnav [data-testid="stBaseButton-primary"] {{
-            background-color: {GOLD} !important;
-            color: #FFFFFF !important;
+            background-color: transparent !important;
+            color: {NAVY} !important;
             border: none !important;
-            font-weight: 600 !important;
+            border-bottom: 2px solid {GOLD} !important;
+            border-radius: 0 !important;
+            font-weight: 700 !important;
+            padding: 0.5rem 0.15rem 0.45rem 0.15rem !important;
+            box-shadow: none !important;
         }}
 
         /* ---- Buttons (elsewhere in the app) ---- */
@@ -215,14 +250,19 @@ def inject_custom_css():
 
         /* ---- Bordered containers used as flat cards ---- */
         div[data-testid="stVerticalBlockBorderWrapper"] {{
-            border-radius: 10px !important;
-            box-shadow: none !important;
+            border-radius: 6px !important;
+            border-color: {BORDER} !important;
+            box-shadow: 0 1px 3px rgba(10,25,48,0.07) !important;
         }}
 
-        /* ---- Alerts ---- */
-        [data-testid="stAlert"] {{
-            border-radius: 8px;
-        }}
+        /* One colour-coded accent stripe per ratio category, on the
+           Ratio Analysis dashboard tiles — a common "premium dashboard
+           card" cue rather than a flat, undifferentiated grid. */
+        .st-key-tile_liquidity div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Liquidity']} !important; }}
+        .st-key-tile_profitability div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Profitability']} !important; }}
+        .st-key-tile_leverage div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Leverage']} !important; }}
+        .st-key-tile_returns div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Returns']} !important; }}
+
 
         /* ---- Dataframes ---- */
         [data-testid="stDataFrame"] {{
@@ -249,35 +289,42 @@ def inject_custom_css():
     )
 
 
-NAV_PAGES = [
-    ("Home", "🏠"),
-    ("Ratio Analysis", "📈"),
-    ("Company Comparison", "📊"),
-    ("Financial Report", "📄"),
-]
+NAV_PAGES = ["Home", "Ratio Analysis", "Company Comparison", "Financial Report"]
 
 
 def render_topbar():
-    """A flat, underline-free top navigation bar: brand mark on the left,
-    one button per page on the right. The active page is a solid gold
-    pill (Streamlit's `primary` button style); the rest are plain text
-    that only picks up colour on hover. Wraps onto a second line on
-    narrower screens instead of overlapping (see the CSS above)."""
+    """A flat, underline-tab top navigation bar: a small monogram mark and
+    serif wordmark on the left, plain text tabs on the right. The active
+    page is bold with a thin brass underline; the rest sit in muted grey
+    and only pick up colour on hover — closer to a financial masthead than
+    a row of app buttons. Wraps onto a second line on narrower screens
+    instead of overlapping (see the CSS above)."""
     with st.container(key="topnav"):
         cols = st.columns([2.4, 1, 1, 1, 1])
         with cols[0]:
             st.markdown(
-                f"<div style='font-family:\"Playfair Display\", Georgia, serif; "
-                f"font-weight:700; font-size:1.1rem; color:{NAVY}; padding-top:0.55rem; "
-                f"white-space:nowrap;'>"
-                f"📊 Financial Ratio Analysis Tool</div>",
+                f"""
+                <div style="display:flex; align-items:center; gap:0.65rem;
+                            padding-top:0.35rem; white-space:nowrap;">
+                  <div style="width:1.9rem; height:1.9rem; border-radius:5px;
+                              background:{NAVY}; display:flex; align-items:center;
+                              justify-content:center; flex-shrink:0;">
+                    <span style="font-family:'Source Serif 4', Georgia, serif;
+                                 font-weight:700; font-size:1.05rem; color:{GOLD};">F</span>
+                  </div>
+                  <span style="font-family:'Source Serif 4', Georgia, serif;
+                               font-weight:700; font-size:1.12rem; color:{NAVY};">
+                    Financial Ratio Analysis Tool
+                  </span>
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
-        for col, (name, icon) in zip(cols[1:], NAV_PAGES):
+        for col, name in zip(cols[1:], NAV_PAGES):
             with col:
                 is_active = st.session_state.get("active_page", "Home") == name
                 if st.button(
-                    f"{icon}  {name}",
+                    name,
                     key=f"nav_{name}",
                     type="primary" if is_active else "secondary",
                 ):
@@ -285,17 +332,20 @@ def render_topbar():
                     st.rerun()
 
 
-def render_page_header(title, subtitle, icon="📊"):
-    """A flat, document-style page header — no colour block, no gradient,
-    just the serif title and a muted one-line description."""
+def render_page_header(title, subtitle):
+    """A flat, document-style page header — a short brass accent bar and
+    the serif title, no decorative icon, plus a muted one-line description."""
     st.markdown(
         f"""
-        <div style="margin-bottom:1.5rem;">
-          <div style="font-family:'Playfair Display', Georgia, serif; font-weight:700;
-                      font-size:1.9rem; color:{NAVY}; line-height:1.25;">
-            {icon} {title}
+        <div style="margin-bottom:1.6rem;">
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <div style="width:5px; height:1.6rem; background:{GOLD}; border-radius:2px; flex-shrink:0;"></div>
+            <div style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
+                        font-size:1.85rem; color:{NAVY}; line-height:1.2;">
+              {title}
+            </div>
           </div>
-          <div style="color:{MUTED}; font-size:0.98rem; margin-top:0.35rem;">
+          <div style="color:{MUTED}; font-size:0.98rem; margin-top:0.45rem; margin-left:1.4rem;">
             {subtitle}
           </div>
         </div>
@@ -416,9 +466,10 @@ def render_sample_data_notice(prefixes):
         if is_sample_data(prefix):
             names.append(company_name_a if prefix == "a" else company_name_b)
     if names:
-        st.info(
-            f"ℹ️ Showing **sample data** for {' and '.join(names)} — upload a file "
-            f"in the sidebar to analyze real figures instead."
+        styled_note(
+            f"Showing <b>sample data</b> for {' and '.join(names)} — upload a file "
+            f"in the sidebar to analyze real figures instead.",
+            "info",
         )
 
 
@@ -431,7 +482,7 @@ def render_extraction_warning(prefix):
     msg = st.session_state.get(f"{prefix}_extract_error")
     if msg:
         label = company_name_a if prefix == "a" else company_name_b
-        st.warning(f"⚠️ {label}: {msg}")
+        styled_note(f"<b>{label}:</b> {msg}", "warning")
 
 
 def render_company_name_field(prefix):
@@ -452,7 +503,7 @@ def render_data_review(prefix, title):
 
     error = st.session_state.get(f"{prefix}_extract_error")
     if error:
-        st.warning(f"⚠️ {error}")
+        styled_note(error, "warning")
 
     meta = st.session_state.get(f"{prefix}_meta", {})
     match_info = meta.get("match_info", {})
@@ -492,12 +543,12 @@ def render_data_review(prefix, title):
 
 
 uploaded_file_a = st.sidebar.file_uploader(
-    "📂 Upload Company A file",
+    "Upload Company A file",
     type=["xlsx", "xls", "csv", "pdf"],
     key="uploader_a"
 )
 uploaded_file_b = st.sidebar.file_uploader(
-    "📂 Upload Company B file (optional)",
+    "Upload Company B file (optional)",
     type=["xlsx", "xls", "csv", "pdf"],
     key="uploader_b"
 )
@@ -967,7 +1018,6 @@ if page == "Home":
         "Welcome",
         "Upload a company's financial statements, review the detected figures, "
         "and generate a client-ready ratio analysis report.",
-        icon="🏠",
     )
 
     st.markdown(
@@ -996,14 +1046,14 @@ if page == "Home":
     )
 
     st.divider()
-    st.header("📥 Your Data")
+    st.header("Your Data")
     st.write(
         "These are the figures detected from your upload (or the sample data "
         "if nothing was uploaded). Everything below is editable — fix anything "
         "that wasn't picked up correctly before moving to the other pages."
     )
 
-    tab_a, tab_b = st.tabs([f"🏢 {company_name_a}", f"🏢 {company_name_b} (optional)"])
+    tab_a, tab_b = st.tabs([company_name_a, f"{company_name_b} (optional)"])
     with tab_a:
         render_data_review("a", "Company A")
     with tab_b:
@@ -1017,7 +1067,6 @@ elif page == "Ratio Analysis":
     render_page_header(
         "Ratio Analysis Dashboard",
         f"Liquidity, profitability and leverage at a glance, calculated from {company_name_a}'s data.",
-        icon="📈",
     )
 
     render_sample_data_notice(["a"])
@@ -1038,7 +1087,7 @@ elif page == "Ratio Analysis":
     metric_cols = st.columns(4)
     for col, (tag, label, value) in zip(metric_cols, dashboard_metrics):
         with col:
-            with st.container(border=True):
+            with st.container(key=f"tile_{tag.lower()}", border=True):
                 st.markdown(
                     f"<div style='color:{CATEGORY_COLORS[tag]}; font-size:0.72rem; letter-spacing:0.08em; "
                     f"text-transform:uppercase; font-weight:700;'>{tag}</div>",
@@ -1048,7 +1097,7 @@ elif page == "Ratio Analysis":
 
     st.divider()
 
-    st.subheader("📋 Financial Insights")
+    st.subheader("Financial Insights")
 
     render_insight(liquidity_analysis(curr_ratio))
     render_insight(profitability_analysis(np_margin))
@@ -1057,7 +1106,7 @@ elif page == "Ratio Analysis":
 
     st.divider()
 
-    st.subheader("📊 Financial Performance")
+    st.subheader("Financial Performance")
 
     chart_option = st.selectbox(
         "Choose a chart",
@@ -1125,7 +1174,6 @@ elif page == "Company Comparison":
     render_page_header(
         "Company Comparison",
         f"{company_name_a} against {company_name_b} — raw figures and calculated ratios side by side.",
-        icon="📊",
     )
 
     render_sample_data_notice(["a", "b"])
@@ -1183,7 +1231,7 @@ elif page == "Company Comparison":
     # ---------------- Ratio Comparison ----------------
 
     st.divider()
-    st.subheader("📐 Ratio Comparison")
+    st.subheader("Ratio Comparison")
 
     ratio_comparison_df = pd.DataFrame({
         company_name_a: [
@@ -1222,7 +1270,6 @@ elif page == "Financial Report":
         "Financial Report",
         f"Generate a polished, multi-page PDF for {company_name_a} — cover page, "
         "executive summary, ratio analysis and charts — ready to share.",
-        icon="📄",
     )
 
     render_sample_data_notice(["a"])
@@ -1256,10 +1303,10 @@ elif page == "Financial Report":
             with open("financial_report.pdf", "rb") as pdf_file:
 
                 st.download_button(
-                    label="⬇️ Download PDF Report",
+                    label="Download PDF Report",
                     data=pdf_file,
                     file_name="financial_report.pdf",
                     mime="application/pdf"
                 )
 
-            st.success("✅ Report generated successfully!")
+            styled_note("Report generated successfully.", "good")
