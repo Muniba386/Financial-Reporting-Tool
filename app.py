@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -51,91 +53,116 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------- Read Excel Data ----------------
+# ---------------- Read Financial Data (flexible upload) ----------------
 
-REQUIRED_ROWS = [
-    "Revenue", "Cost of Sales", "Gross Profit", "Net Profit",
-    "Current Assets", "Current Liabilities", "Total Debt", "Equity"
-]
+from data_extraction import extract_financial_data, METRIC_LABELS
+
+METRICS = list(METRIC_LABELS.keys())
 
 
-def load_company_data(source, label):
+def sync_company_data(prefix, uploaded_file, default_path, label):
     """
-    Load a company's financial figures from an Excel file.
+    Runs auto-detection only when the uploaded file actually changes (not
+    on every rerun), and seeds st.session_state[f"{prefix}_values"] — a
+    plain dict, not a widget-bound key — with the detected values.
 
-    Shows a friendly error message and stops the app instead of
-    crashing with a raw traceback if the file is missing, unreadable,
-    or doesn't have the expected rows/columns.
+    Using a plain dict (rather than reading widget keys directly) matters
+    because Streamlit clears a widget's session_state entry whenever that
+    widget isn't rendered in a given script run (e.g. after navigating
+    away from the Home page). Storing values in an ordinary dict keeps
+    them available on every page regardless of which widgets are visible.
     """
-    try:
-        df = pd.read_excel(source)
-    except Exception as e:
-        st.error(
-            f"⚠️ Couldn't read the Excel file for **{label}**. "
-            f"Please make sure it's a valid .xlsx file in the expected format.\n\n"
-            f"Details: {e}"
-        )
-        st.stop()
+    if uploaded_file is not None:
+        file_key = f"{uploaded_file.name}:{uploaded_file.size}"
+        source, filename = uploaded_file, uploaded_file.name
+    else:
+        file_key = "__default__"
+        source, filename = default_path, default_path
 
-    if df.shape[0] < len(REQUIRED_ROWS):
-        st.error(
-            f"⚠️ The Excel file for **{label}** doesn't have enough rows.\n\n"
-            f"Expected {len(REQUIRED_ROWS)} rows in this order: "
-            f"{', '.join(REQUIRED_ROWS)}.\n\n"
-            f"Found {df.shape[0]} row(s)."
-        )
-        st.stop()
-
-    # Accept the year column whether pandas read it as an int (2025) or
-    # a string ("2025") — depends on how the source file was saved.
-    year_col = None
-    for candidate in (2025, "2025"):
-        if candidate in df.columns:
-            year_col = candidate
-            break
-
-    if year_col is None:
-        st.error(
-            f"⚠️ The Excel file for **{label}** doesn't have a '2025' column.\n\n"
-            f"Found columns: {list(df.columns)}"
-        )
-        st.stop()
-
-    try:
-        return {
-            "revenue": df.loc[0, year_col],
-            "gross_profit": df.loc[2, year_col],
-            "net_profit": df.loc[3, year_col],
-            "current_assets": df.loc[4, year_col],
-            "current_liabilities": df.loc[5, year_col],
-            "total_debt": df.loc[6, year_col],
-            "equity": df.loc[7, year_col],
+    state_key = f"{prefix}_file_key"
+    if st.session_state.get(state_key) != file_key:
+        values, meta = extract_financial_data(source, filename)
+        st.session_state[state_key] = file_key
+        st.session_state[f"{prefix}_meta"] = meta or {}
+        st.session_state[f"{prefix}_extract_error"] = (meta or {}).get("error")
+        st.session_state[f"{prefix}_values"] = {
+            metric: float((values or {}).get(metric, 0.0)) for metric in METRICS
         }
-    except Exception as e:
-        st.error(
-            f"⚠️ Couldn't read the expected values from the **{label}** file. "
-            f"Details: {e}"
-        )
-        st.stop()
+
+    if f"{prefix}_values" not in st.session_state:
+        st.session_state[f"{prefix}_values"] = {metric: 0.0 for metric in METRICS}
 
 
-uploaded_file = st.sidebar.file_uploader(
-    "📂 Upload Excel File",
-    type=["xlsx"]
+def company_values(prefix):
+    return dict(st.session_state[f"{prefix}_values"])
+
+
+def render_data_review(prefix, title):
+    error = st.session_state.get(f"{prefix}_extract_error")
+    if error:
+        st.warning(f"⚠️ {error}")
+
+    meta = st.session_state.get(f"{prefix}_meta", {})
+    match_info = meta.get("match_info", {})
+    if meta.get("detected_year"):
+        other_years = [y for y in meta.get("available_years", []) if y != meta["detected_year"]]
+        years_note = f" · detected year: **{meta['detected_year']}**"
+        if other_years:
+            years_note += f" (also found: {other_years} — edit figures below if you'd rather use a different year)"
+        st.caption(f"Source column: **{meta.get('value_column', '?')}**{years_note}")
+
+    values = st.session_state[f"{prefix}_values"]
+    # Widget keys include the current file identity so that uploading a new
+    # file creates fresh widgets with the newly-detected values. Without
+    # this, Streamlit would keep showing each field's *previous* value —
+    # passing a new `value=` to an existing widget key is ignored once
+    # that key already has a stored value.
+    file_key = st.session_state.get(f"{prefix}_file_key", "default")
+    key_suffix = re.sub(r"[^a-zA-Z0-9_]", "_", str(file_key))
+
+    cols = st.columns(2)
+    for i, metric in enumerate(METRICS):
+        with cols[i % 2]:
+            new_val = st.number_input(
+                METRIC_LABELS[metric],
+                value=float(values.get(metric, 0.0)),
+                key=f"widget_{prefix}_{metric}_{key_suffix}",
+                step=1000.0,
+                format="%.2f"
+            )
+            values[metric] = new_val
+            info = match_info.get(metric)
+            if info:
+                st.caption(f"Matched \"{info['matched_label']}\" ({info['confidence']*100:.0f}% confidence)")
+            else:
+                st.caption("Not detected — enter manually")
+    st.session_state[f"{prefix}_values"] = values
+
+
+uploaded_file_a = st.sidebar.file_uploader(
+    "📂 Upload Company A file",
+    type=["xlsx", "xls", "csv", "pdf"],
+    key="uploader_a"
+)
+uploaded_file_b = st.sidebar.file_uploader(
+    "📂 Upload Company B file (optional)",
+    type=["xlsx", "xls", "csv", "pdf"],
+    key="uploader_b"
 )
 
 st.sidebar.caption(
-    "Expected format: 8 rows (Revenue, Cost of Sales, Gross Profit, Net "
-    "Profit, Current Assets, Current Liabilities, Total Debt, Equity) "
-    "with a '2025' column, same layout as Financial_data.xlsx."
+    "Works with almost any financial statement — Excel, CSV, or a "
+    "text-based PDF. Row order and exact account names don't need to "
+    "match; figures are auto-detected and shown for review on the Home "
+    "page before anything is calculated, so you can fix anything that "
+    "wasn't picked up correctly."
 )
 
-if uploaded_file is not None:
-    company_a = load_company_data(uploaded_file, "Company A (uploaded file)")
-else:
-    company_a = load_company_data("Financial_data.xlsx", "Company A")
+sync_company_data("a", uploaded_file_a, "Financial_data.xlsx", "Company A")
+sync_company_data("b", uploaded_file_b, "financial_data_company_b.xlsx", "Company B")
 
-company_b = load_company_data("financial_data_company_b.xlsx", "Company B")
+company_a = company_values("a")
+company_b = company_values("b")
 
 # ---------- Company A ----------
 revenue = company_a["revenue"]
@@ -249,8 +276,8 @@ def generate_pdf():
             This report presents a financial analysis of the company's financial
             performance based on the 2025 financial statements.
 
-            The company generated revenue of £{revenue:,} and achieved a net profit
-            of £{net_profit:,}. Liquidity, profitability and leverage ratios have
+            The company generated revenue of £{revenue:,.0f} and achieved a net profit
+            of £{net_profit:,.0f}. Liquidity, profitability and leverage ratios have
             been calculated to evaluate the company's overall financial health and
             operational efficiency.
             """,
@@ -288,7 +315,7 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Revenue:</b> The company generated total revenue of £{revenue:,} during the financial year, indicating the overall level of business activity.",
+            f"<b>Revenue:</b> The company generated total revenue of £{revenue:,.0f} during the financial year, indicating the overall level of business activity.",
             styles["BodyText"]
         )
     )
@@ -297,7 +324,7 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Gross Profit:</b> Gross profit amounted to £{gross_profit:,}, demonstrating the company's ability to generate profit after direct production costs.",
+            f"<b>Gross Profit:</b> Gross profit amounted to £{gross_profit:,.0f}, demonstrating the company's ability to generate profit after direct production costs.",
             styles["BodyText"]
         )
     )
@@ -306,7 +333,7 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Net Profit:</b> The company reported a net profit of £{net_profit:,}, showing its profitability after all operating expenses, interest and taxes.",
+            f"<b>Net Profit:</b> The company reported a net profit of £{net_profit:,.0f}, showing its profitability after all operating expenses, interest and taxes.",
             styles["BodyText"]
         )
     )
@@ -354,9 +381,9 @@ def generate_pdf():
     story.append(Spacer(1, 10))
     table_data = [
         ["Metric", "Value"],
-        ["Revenue", f"{revenue:,}"],
-        ["Gross Profit", f"{gross_profit:,}"],
-        ["Net Profit", f"{net_profit:,}"],
+        ["Revenue", f"{revenue:,.0f}"],
+        ["Gross Profit", f"{gross_profit:,.0f}"],
+        ["Net Profit", f"{net_profit:,.0f}"],
         ["Current Ratio", format_ratio(curr_ratio)],
         ["Debt to Equity", format_ratio(de_ratio)],
         ["Return on Equity", format_ratio(roe, suffix="%")]
@@ -521,6 +548,20 @@ This application performs:
 
 Developed by **Muniba Ashraf**
 """)
+
+    st.divider()
+    st.header("📥 Your Data")
+    st.write(
+        "These are the figures detected from your upload (or the sample data "
+        "if nothing was uploaded). Everything below is editable — fix anything "
+        "that wasn't picked up correctly before moving to the other pages."
+    )
+
+    st.subheader("Company A")
+    render_data_review("a", "Company A")
+
+    with st.expander("Company B (used on the Company Comparison page)"):
+        render_data_review("b", "Company B")
 
 ## ---------------- Ratio Analysis ----------------
 
