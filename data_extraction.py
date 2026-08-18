@@ -76,6 +76,7 @@ METRIC_SYNONYMS = {
     "total_debt": [
         "total debt", "total liabilities", "total borrowings",
         "borrowings", "long term debt", "long-term debt", "total loans",
+        "long term loans", "long-term loans", "loans", "bank loans",
         "total liabilities and debt"
     ],
     "equity": [
