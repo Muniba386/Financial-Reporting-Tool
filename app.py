@@ -2,6 +2,7 @@ import re
 
 import streamlit as st
 import pandas as pd
+import altair as alt
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 from datetime import datetime
@@ -52,6 +53,185 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# ---------------- Brand / Theme ----------------
+
+NAVY = "#0B1F3A"
+NAVY_LIGHT = "#16345C"
+NAVY_SOFT = "#EEF2F8"
+GOLD = "#B08D2E"
+GOLD_LIGHT = "#D9B44A"
+MUTED = "#6B7280"
+
+
+def inject_custom_css():
+    st.markdown(
+        f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+
+        html, body, [class*="css"] {{
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }}
+
+        h1, h2, h3 {{
+            font-family: 'Playfair Display', Georgia, serif !important;
+            color: {NAVY} !important;
+        }}
+
+        [data-testid="stAppViewContainer"] {{
+            background-color: #FBFBFC;
+        }}
+
+        /* ---- Sidebar ---- */
+        [data-testid="stSidebar"] {{
+            background: linear-gradient(180deg, {NAVY} 0%, {NAVY_LIGHT} 100%);
+        }}
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] .stMarkdown p,
+        [data-testid="stSidebar"] .stCaption,
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{
+            color: #E7ECF5 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {{
+            background-color: #FFFFFF;
+            border: 1px dashed rgba(255,255,255,0.35);
+            border-radius: 10px;
+        }}
+        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {{
+            color: {NAVY} !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {{
+            background-color: {GOLD} !important;
+            color: #FFFFFF !important;
+            border: none !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stFileUploaderFile"] {{
+            color: {NAVY} !important;
+            background-color: #FFFFFF;
+            border-radius: 8px;
+        }}
+        [data-testid="stSidebar"] [data-testid="stFileUploaderFile"] * {{
+            color: {NAVY} !important;
+        }}
+        [data-testid="stSidebar"] hr {{
+            border-color: rgba(255,255,255,0.15);
+        }}
+        [data-testid="stSidebar"] [role="radiogroup"] label {{
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+        }}
+        [data-testid="stSidebar"] [role="radiogroup"] label:hover {{
+            background-color: rgba(255,255,255,0.08);
+        }}
+
+        /* ---- Buttons ---- */
+        .stButton > button, .stDownloadButton > button {{
+            background-color: {GOLD};
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            padding: 0.55rem 1.4rem;
+            transition: background-color 0.15s ease;
+        }}
+        .stButton > button:hover, .stDownloadButton > button:hover {{
+            background-color: #96771F;
+            color: #FFFFFF;
+        }}
+
+        /* ---- Metrics ---- */
+        [data-testid="stMetricValue"] {{
+            color: {NAVY};
+            font-weight: 700;
+        }}
+        [data-testid="stMetricLabel"] {{
+            color: {MUTED};
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }}
+
+        /* ---- Bordered containers as cards ---- */
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
+            border-radius: 12px !important;
+            box-shadow: 0 1px 4px rgba(11,31,58,0.08);
+        }}
+
+        /* ---- Alerts ---- */
+        [data-testid="stAlert"] {{
+            border-radius: 10px;
+        }}
+
+        /* ---- Dataframes ---- */
+        [data-testid="stDataFrame"] {{
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #E7EAF0;
+        }}
+
+        hr {{
+            border-color: #E5E9F0;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_hero(title, subtitle, icon="📊"):
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, {NAVY} 0%, {NAVY_LIGHT} 100%);
+                    padding: 2rem 2.4rem; border-radius: 14px; margin-bottom: 1.6rem;
+                    box-shadow: 0 6px 20px rgba(11,31,58,0.22);">
+          <div style="color:{GOLD_LIGHT}; font-size:0.8rem; letter-spacing:0.16em;
+                      text-transform:uppercase; font-weight:700;">
+            {icon} Financial Ratio Analysis Tool
+          </div>
+          <div style="color:#FFFFFF; font-family:'Playfair Display', Georgia, serif;
+                      font-size:2.15rem; font-weight:700; margin-top:0.35rem; line-height:1.2;">
+            {title}
+          </div>
+          <div style="color:#C3CCDC; font-size:1rem; margin-top:0.5rem;">
+            {subtitle}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_bar_chart(data, color=GOLD, height=320):
+    """Render a styled Altair bar chart from a single-column DataFrame
+    whose index holds the category names (matches the shape previously
+    passed to st.bar_chart throughout this app)."""
+    df = data.reset_index()
+    df.columns = ["Category", "Amount"]
+    chart = (
+        alt.Chart(df)
+        .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5, size=54)
+        .encode(
+            x=alt.X("Category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("Amount:Q", title="Amount (£)", axis=alt.Axis(format=",.0f")),
+            color=alt.value(color),
+            tooltip=[
+                alt.Tooltip("Category:N", title="Item"),
+                alt.Tooltip("Amount:Q", title="Amount", format=",.0f"),
+            ],
+        )
+        .properties(height=height)
+        .configure_axis(gridColor="#EEF1F5", domainColor="#D8DEE9", tickColor="#D8DEE9")
+        .configure_view(strokeWidth=0)
+    )
+    st.altair_chart(chart, width="stretch")
+
+
+inject_custom_css()
 
 # ---------------- Read Financial Data (flexible upload) ----------------
 
@@ -196,6 +376,10 @@ def generate_pdf():
     styles = getSampleStyleSheet()
     from reportlab.lib.styles import ParagraphStyle
 
+    BRAND_NAVY = colors.HexColor("#0B1F3A")
+    BRAND_GOLD = colors.HexColor("#B08D2E")
+    BRAND_SOFT = colors.HexColor("#F4F6FA")
+
     title_style = ParagraphStyle(
         "MyTitle",
         parent=styles["Title"],
@@ -203,12 +387,15 @@ def generate_pdf():
         fontSize=28,
         leading=34,
         alignment=1,
-        textColor=colors.darkblue
+        textColor=BRAND_NAVY
     )
 
     styles["Title"].alignment = TA_LEFT
+    styles["Title"].textColor = BRAND_NAVY
     styles["Heading1"].alignment = TA_LEFT
+    styles["Heading1"].textColor = BRAND_NAVY
     styles["Heading2"].alignment = TA_LEFT
+    styles["Heading2"].textColor = BRAND_NAVY
 
     story = []
     story.append(
@@ -220,7 +407,10 @@ def generate_pdf():
     from reportlab.graphics.shapes import Drawing, Line
 
     line = Drawing(450, 10)
-    line.add(Line(0, 5, 450, 5))
+    gold_line = Line(0, 5, 450, 5)
+    gold_line.strokeColor = BRAND_GOLD
+    gold_line.strokeWidth = 2
+    line.add(gold_line)
 
     story.append(line)
     story.append(Spacer(1, 25))
@@ -391,12 +581,13 @@ def generate_pdf():
 
     table = Table(table_data, colWidths=[220, 120])
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#D8DEE9")),
+        ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
     ]))
 
     story.append(table)
@@ -418,14 +609,15 @@ def generate_pdf():
         colWidths=[130, 70, 220]
     )
     ratio_summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#D8DEE9")),
+        ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
     ]))
 
     story.append(
@@ -440,15 +632,25 @@ def generate_pdf():
     # ---------------- Charts ----------------
 
     money_formatter = FuncFormatter(lambda x, pos: f"£{x:,.0f}")
+    NAVY_HEX = "#0B1F3A"
+    GOLD_HEX = "#B08D2E"
+
+    plt.rcParams["font.family"] = "sans-serif"
 
     fig1, ax1 = plt.subplots(figsize=(6, 4))
     ax1.bar(
         ["Revenue", "Gross Profit", "Net Profit"],
-        [revenue, gross_profit, net_profit]
+        [revenue, gross_profit, net_profit],
+        color=[NAVY_HEX, GOLD_HEX, "#5B7DA6"],
+        width=0.55
     )
-    ax1.set_title("Financial Performance")
+    ax1.set_title("Financial Performance", fontsize=13, fontweight="bold", color=NAVY_HEX)
     ax1.set_ylabel("Amount (£)")
     ax1.yaxis.set_major_formatter(money_formatter)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.grid(axis="y", color="#E5E9F0", linewidth=0.8, zorder=0)
+    ax1.set_axisbelow(True)
     fig1.tight_layout()
     fig1.savefig("chart.png", dpi=300)
     plt.close(fig1)
@@ -466,11 +668,16 @@ def generate_pdf():
     ax2.bar(
         ["Current Assets", "Current Liabilities"],
         [current_assets, current_liabilities],
-        color=["#2E7D32", "#C62828"]
+        color=[NAVY_HEX, GOLD_HEX],
+        width=0.45
     )
-    ax2.set_title("Assets vs Liabilities")
+    ax2.set_title("Assets vs Liabilities", fontsize=13, fontweight="bold", color=NAVY_HEX)
     ax2.set_ylabel("Amount (£)")
     ax2.yaxis.set_major_formatter(money_formatter)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    ax2.grid(axis="y", color="#E5E9F0", linewidth=0.8, zorder=0)
+    ax2.set_axisbelow(True)
     fig2.tight_layout()
     fig2.savefig("chart2.png", dpi=300)
     plt.close(fig2)
@@ -531,23 +738,36 @@ page = st.sidebar.radio(
 
 if page == "Home":
 
-    st.title("📊 Financial Ratio Analysis Tool")
+    render_hero(
+        "Welcome",
+        "A polished, ratio-driven view of any company's financial statements — "
+        "upload a file, review the detected figures, and generate a client-ready report.",
+    )
 
-    st.markdown("""
-## Welcome!
+    feature_cols = st.columns(5)
+    features = [
+        ("📈", "Liquidity", "Current ratio & short-term health"),
+        ("💰", "Profitability", "Margins & earning power"),
+        ("🏦", "Solvency", "Leverage & debt exposure"),
+        ("📊", "Comparison", "Company A vs. Company B"),
+        ("📄", "Reporting", "Boardroom-ready PDF export"),
+    ]
+    for col, (icon, label, desc) in zip(feature_cols, features):
+        with col:
+            with st.container(border=True):
+                st.markdown(
+                    f"<div style='font-size:1.4rem;'>{icon}</div>"
+                    f"<div style='font-weight:700; color:{NAVY}; margin-top:0.2rem;'>{label}</div>"
+                    f"<div style='color:{MUTED}; font-size:0.82rem; margin-top:0.15rem;'>{desc}</div>",
+                    unsafe_allow_html=True,
+                )
 
-This application performs:
-
-- 📈 Liquidity Analysis
-- 💰 Profitability Analysis
-- 🏦 Solvency Analysis
-- 📊 Company Comparison
-- 📄 Financial Report Generation
-
----
-
-Developed by **Muniba Ashraf**
-""")
+    st.markdown(
+        f"<div style='color:{MUTED}; font-size:0.85rem; margin-top:1.2rem;'>"
+        f"Developed by <b style='color:{NAVY};'>Muniba Ashraf</b> · "
+        f"BSc (Hons) Accounting &amp; Finance</div>",
+        unsafe_allow_html=True,
+    )
 
     st.divider()
     st.header("📥 Your Data")
@@ -558,7 +778,8 @@ Developed by **Muniba Ashraf**
     )
 
     st.subheader("Company A")
-    render_data_review("a", "Company A")
+    with st.container(border=True):
+        render_data_review("a", "Company A")
 
     with st.expander("Company B (used on the Company Comparison page)"):
         render_data_review("b", "Company B")
@@ -567,7 +788,11 @@ Developed by **Muniba Ashraf**
 
 elif page == "Ratio Analysis":
 
-    st.title("📈 Ratio Analysis Dashboard")
+    render_hero(
+        "Ratio Analysis Dashboard",
+        "Liquidity, profitability and leverage at a glance, calculated from Company A's data.",
+        icon="📈",
+    )
 
     curr_ratio = current_ratio(current_assets, current_liabilities)
     gp_margin = gross_profit_margin(gross_profit, revenue)
@@ -575,29 +800,22 @@ elif page == "Ratio Analysis":
     de_ratio = debt_to_equity(total_debt, equity)
     roe = return_on_equity(net_profit, equity)
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.metric(
-            "Current Ratio",
-            format_ratio(curr_ratio)
-        )
-
-        st.metric(
-            "Gross Profit Margin",
-            format_ratio(gp_margin, suffix="%")
-        )
-
-    with col2:
-        st.metric(
-            "Debt to Equity",
-            format_ratio(de_ratio)
-        )
-
-        st.metric(
-            "Return on Equity",
-            format_ratio(roe, suffix="%")
-        )
+    dashboard_metrics = [
+        ("Liquidity", "Current Ratio", format_ratio(curr_ratio)),
+        ("Profitability", "Gross Profit Margin", format_ratio(gp_margin, suffix="%")),
+        ("Leverage", "Debt to Equity", format_ratio(de_ratio)),
+        ("Returns", "Return on Equity", format_ratio(roe, suffix="%")),
+    ]
+    metric_cols = st.columns(4)
+    for col, (tag, label, value) in zip(metric_cols, dashboard_metrics):
+        with col:
+            with st.container(border=True):
+                st.markdown(
+                    f"<div style='color:{GOLD}; font-size:0.72rem; letter-spacing:0.08em; "
+                    f"text-transform:uppercase; font-weight:700;'>{tag}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.metric(label, value)
 
     st.divider()
 
@@ -670,13 +888,17 @@ elif page == "Ratio Analysis":
         )
 
     # Show the chart for ALL options
-    st.bar_chart(chart_data)
+    render_bar_chart(chart_data)
 
 # ---------------- Company Comparison ----------------
 
 elif page == "Company Comparison":
 
-    st.title("📊 Company Comparison")
+    render_hero(
+        "Company Comparison",
+        "Company A against Company B — raw figures and calculated ratios side by side.",
+        icon="📊",
+    )
 
     comparison_df = pd.DataFrame({
         "Company A": [
@@ -724,7 +946,7 @@ elif page == "Company Comparison":
         }
     )
 
-    st.bar_chart(chart_df)
+    render_bar_chart(chart_df, color=NAVY_LIGHT)
 
     # ---------------- Ratio Comparison ----------------
 
@@ -764,20 +986,37 @@ elif page == "Company Comparison":
 
 elif page == "Financial Report":
 
-    st.title("📄 Financial Report")
+    render_hero(
+        "Financial Report",
+        "Generate a polished, multi-page PDF — cover page, executive summary, "
+        "ratio analysis and charts — ready to share.",
+        icon="📄",
+    )
 
-    if st.button("Generate PDF Report"):
+    with st.container(border=True):
+        st.markdown(
+            f"<div style='font-weight:700; color:{NAVY}; font-size:1.05rem;'>"
+            f"Financial Ratio Analysis Report</div>"
+            f"<div style='color:{MUTED}; font-size:0.88rem; margin-top:0.25rem;'>"
+            f"Includes an executive summary, recommendations, a detailed ratio "
+            f"write-up, a summary table with interpretations, and two charts "
+            f"(Revenue vs Profit, Assets vs Liabilities).</div>",
+            unsafe_allow_html=True,
+        )
+        st.write("")
 
-        with st.spinner("Generating PDF report..."):
-            generate_pdf()
+        if st.button("Generate PDF Report"):
 
-        with open("financial_report.pdf", "rb") as pdf_file:
+            with st.spinner("Generating PDF report..."):
+                generate_pdf()
 
-            st.download_button(
-                label="⬇️ Download PDF Report",
-                data=pdf_file,
-                file_name="financial_report.pdf",
-                mime="application/pdf"
-            )
+            with open("financial_report.pdf", "rb") as pdf_file:
 
-        st.success("✅ Report generated successfully!")
+                st.download_button(
+                    label="⬇️ Download PDF Report",
+                    data=pdf_file,
+                    file_name="financial_report.pdf",
+                    mime="application/pdf"
+                )
+
+            st.success("✅ Report generated successfully!")
