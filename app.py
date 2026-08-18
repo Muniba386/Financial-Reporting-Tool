@@ -143,6 +143,16 @@ def render_insight(result):
     styled_note(text, severity)
 
 
+def money_fmt(x):
+    """Format a currency amount, correctly handling negative values.
+    A naive f-string (f"£{x:,.0f}") renders a loss or negative working
+    capital as the malformed "£-12,000"; this puts the minus sign before
+    the currency symbol instead ("-£12,000"), which is how real accounts
+    are actually written."""
+    sign = "-" if x < 0 else ""
+    return f"{sign}£{abs(x):,.0f}"
+
+
 def inject_custom_css():
     st.markdown(
         f"""
@@ -498,7 +508,7 @@ def compute_ratio_set(v):
     separate re-implementations drifting apart. v is a dict shaped like
     company_values(prefix) — one of the 15 raw line items per key.
     Returns a list of (category, label, formatted_value) tuples."""
-    money = lambda x: f"£{x:,.0f}"
+    money = money_fmt
     return [
         ("Liquidity", "Current Ratio",
          format_ratio(current_ratio(v["current_assets"], v["current_liabilities"]))),
@@ -737,6 +747,26 @@ def generate_pdf():
     a_is_sample = is_sample_data("a")
     b_is_real = not is_sample_data("b")
 
+    # Computed up front so both the narrative paragraphs and the summary
+    # table can react to the company's actual figures — a loss-making or
+    # highly-geared company must not read back the same "healthy, moderate
+    # risk" language a strong one would get.
+    curr_ratio = current_ratio(current_assets, current_liabilities)
+    de_ratio = debt_to_equity(total_debt, equity)
+    roe = return_on_equity(net_profit, equity)
+    gp_margin = gross_profit_margin(gross_profit, revenue)
+    np_margin = net_profit_margin(net_profit, revenue)
+    inv_turnover = inventory_turnover(cost_of_sales, inventory)
+
+    liquidity_msg, liquidity_sev = liquidity_analysis(curr_ratio)
+    debt_msg, debt_sev = debt_analysis(de_ratio)
+    profitability_msg, profitability_sev = profitability_analysis(np_margin)
+    roe_msg, roe_sev = roe_analysis(roe)
+    gross_margin_msg, gross_margin_sev = gross_margin_analysis(gp_margin)
+
+    net_profit_word = "net profit" if net_profit >= 0 else "net loss"
+    net_profit_verb = "achieved" if net_profit >= 0 else "recorded"
+
     title_style = ParagraphStyle(
         "MyTitle",
         parent=styles["Title"],
@@ -804,6 +834,17 @@ def generate_pdf():
             )
         )
 
+    story.append(Spacer(1, 10))
+    story.append(
+        Paragraph(
+            "<i>This report is generated automatically from the figures provided and is "
+            "intended for illustrative and educational purposes. It does not constitute "
+            "professional accounting, audit, or investment advice — please consult a "
+            "qualified accountant before making financial decisions.</i>",
+            ParagraphStyle("Disclaimer", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#6E6759")),
+        )
+    )
+
     story.append(PageBreak())
 
     story.append(
@@ -833,8 +874,8 @@ def generate_pdf():
             This report presents a financial analysis of {report_company}'s financial
             performance based on {period_label if detected_year_a else 'its most recent'} financial statements.
 
-            {report_company} generated revenue of £{revenue:,.0f} and achieved a net profit
-            of £{net_profit:,.0f}. Liquidity, profitability and leverage ratios have
+            {report_company} generated revenue of {money_fmt(revenue)} and {net_profit_verb} a {net_profit_word}
+            of {money_fmt(abs(net_profit))}. Liquidity, profitability and leverage ratios have
             been calculated to evaluate the company's overall financial health and
             operational efficiency.
             """,
@@ -850,14 +891,64 @@ def generate_pdf():
         )
     )
 
+    # Built from the company's actual severities rather than a fixed list —
+    # a company already doing well on a measure gets a "maintain" note, not
+    # the same generic "improve" instruction as one that's genuinely weak
+    # on it, and a company that's simply missing the data gets told so.
+    recommendations = []
+    if liquidity_sev in ("bad", "medium"):
+        recommendations.append(
+            "Improve short-term liquidity — current liabilities are close to "
+            "or exceeding current assets, which is worth addressing to reduce "
+            "the risk of struggling to meet short-term obligations."
+            if liquidity_sev == "bad" else
+            "Continue building the liquidity buffer — the current ratio is "
+            "adequate but has limited headroom above 1."
+        )
+    elif liquidity_sev == "good":
+        recommendations.append("Maintain the current strong liquidity position.")
+
+    if profitability_sev in ("bad", "medium"):
+        recommendations.append(
+            "Improve profitability by increasing operating efficiency and "
+            "reviewing cost control, as net profit margin is currently low."
+            if profitability_sev == "bad" else
+            "Look for further efficiency gains to build on the current, "
+            "moderate profit margin."
+        )
+    elif profitability_sev == "good":
+        recommendations.append("Continue the strong profitability trend.")
+
+    if debt_sev in ("bad", "medium"):
+        recommendations.append(
+            "Reduce dependence on debt financing and consider a plan to bring "
+            "leverage down, as debt is currently high relative to equity."
+            if debt_sev == "bad" else
+            "Monitor debt levels to avoid excessive financial leverage as the "
+            "business grows."
+        )
+    elif debt_sev == "good":
+        recommendations.append("Maintain the current, conservative level of financial leverage.")
+
+    if roe_sev in ("bad", "medium"):
+        recommendations.append(
+            "Focus on improving shareholder returns, which are currently weak "
+            "relative to the equity invested."
+            if roe_sev == "bad" else
+            "Continue improving shareholder returns through sustainable growth strategies."
+        )
+    elif roe_sev == "good":
+        recommendations.append("Continue delivering strong returns to shareholders.")
+
+    if not recommendations:
+        recommendations.append(
+            "No specific figures were available to base a recommendation on — "
+            "upload a complete set of financial statements for a fuller analysis."
+        )
+
     story.append(
         Paragraph(
-            """
-            • Improve profitability by increasing operating efficiency.<br/>
-            • Maintain the current liquidity ratio above 1.5.<br/>
-            • Monitor debt levels to avoid excessive financial leverage.<br/>
-            • Continue improving shareholder returns through sustainable growth strategies.
-            """,
+            "<br/>".join(f"• {r}" for r in recommendations),
             styles["BodyText"]
         )
     )
@@ -872,7 +963,7 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Revenue:</b> The company generated total revenue of £{revenue:,.0f} during the financial year, indicating the overall level of business activity.",
+            f"<b>Revenue:</b> The company generated total revenue of {money_fmt(revenue)} during the financial year, indicating the overall level of business activity.",
             styles["BodyText"]
         )
     )
@@ -881,7 +972,8 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Gross Profit:</b> Gross profit amounted to £{gross_profit:,.0f}, demonstrating the company's ability to generate profit after direct production costs.",
+            f"<b>Gross Profit:</b> {'Gross profit amounted to' if gross_profit >= 0 else 'The company recorded a gross loss of'} {money_fmt(abs(gross_profit))}"
+            f"{', demonstrating the company’s ability to generate profit after direct production costs.' if gross_profit >= 0 else ' — cost of sales exceeded revenue for the period.'}",
             styles["BodyText"]
         )
     )
@@ -890,23 +982,8 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Net Profit:</b> The company reported a net profit of £{net_profit:,.0f}, showing its profitability after all operating expenses, interest and taxes.",
-            styles["BodyText"]
-        )
-    )
-
-    story.append(Spacer(1, 8))
-
-    curr_ratio = current_ratio(current_assets, current_liabilities)
-    de_ratio = debt_to_equity(total_debt, equity)
-    roe = return_on_equity(net_profit, equity)
-    gp_margin = gross_profit_margin(gross_profit, revenue)
-    np_margin = net_profit_margin(net_profit, revenue)
-    inv_turnover = inventory_turnover(cost_of_sales, inventory)
-
-    story.append(
-        Paragraph(
-            f"<b>Current Ratio ({format_ratio(curr_ratio)}):</b> A current ratio above 1 indicates that the company has sufficient current assets to meet its short-term liabilities, suggesting a satisfactory liquidity position.",
+            f"<b>Net Profit:</b> The company {net_profit_verb} a {net_profit_word} of {money_fmt(abs(net_profit))}, "
+            f"{'showing its profitability' if net_profit >= 0 else 'reflecting the shortfall'} after all operating expenses, interest and taxes.",
             styles["BodyText"]
         )
     )
@@ -915,7 +992,19 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            f"<b>Debt-to-Equity Ratio ({format_ratio(de_ratio)}):</b> This ratio measures financial leverage. A value of {format_ratio(de_ratio)} indicates that the company uses a moderate level of debt financing relative to shareholders' equity.",
+            f"<b>Current Ratio ({format_ratio(curr_ratio)}):</b> {liquidity_msg}. "
+            "A current ratio above 1 means current assets exceed current liabilities; "
+            "below 1 means they don't, which can signal difficulty meeting short-term obligations.",
+            styles["BodyText"]
+        )
+    )
+
+    story.append(Spacer(1, 8))
+
+    story.append(
+        Paragraph(
+            f"<b>Debt-to-Equity Ratio ({format_ratio(de_ratio)}):</b> This ratio measures financial leverage — "
+            f"total debt relative to shareholders' equity. {debt_msg}.",
             styles["BodyText"]
         )
     )
@@ -1040,7 +1129,7 @@ def generate_pdf():
 
     # ---------------- Charts ----------------
 
-    money_formatter = FuncFormatter(lambda x, pos: f"£{x:,.0f}")
+    money_formatter = FuncFormatter(lambda x, pos: money_fmt(x))
     NAVY_HEX = "#0A1930"
     GOLD_HEX = "#9B6526"
 
@@ -1107,17 +1196,43 @@ def generate_pdf():
         )
     )
 
+    # An accurate, data-driven summary rather than a fixed "healthy and
+    # stable" line — a report that praises a loss-making, highly-geared
+    # company as healthy would be actively misleading to whoever reads it.
+    SEV_PHRASE = {
+        "good": "a strength",
+        "medium": "acceptable, though with room to improve",
+        "bad": "a concern",
+        "unavailable": "not calculable from the figures provided",
+    }
+    severities = [liquidity_sev, profitability_sev, debt_sev, roe_sev, gross_margin_sev]
+    bad_count = severities.count("bad")
+    good_count = severities.count("good")
+    if bad_count >= 2:
+        overall_assessment = (
+            f"Taken together, {report_company} faces some financial challenges that "
+            "warrant attention, with more than one of the headline ratios above "
+            "falling into the weaker band."
+        )
+    elif bad_count == 1 or good_count < 3:
+        overall_assessment = (
+            f"Taken together, {report_company} shows a mixed financial position — "
+            "strong in some areas, with room for improvement in others, as set out above."
+        )
+    else:
+        overall_assessment = (
+            f"Taken together, {report_company} demonstrates a healthy financial "
+            "position and sound operational efficiency across the ratios calculated."
+        )
+
     story.append(
         Paragraph(
             f"""
-            The financial analysis indicates that {report_company} maintained a stable
-            financial position during {period_label if detected_year_a else 'the period reviewed'}. Liquidity remained satisfactory with a
-            Current Ratio of {format_ratio(curr_ratio)},
-            while the Debt-to-Equity Ratio of {format_ratio(de_ratio)}
-            shows moderate financial leverage. The company generated a Return on Equity
-            of {format_ratio(roe, suffix='%')}, indicating effective use
-            of shareholders' investment. Overall, {report_company} demonstrates healthy
-            financial performance and operational efficiency.
+            During {period_label if detected_year_a else 'the period reviewed'}, {report_company} recorded a
+            Current Ratio of {format_ratio(curr_ratio)} ({SEV_PHRASE.get(liquidity_sev, 'not calculable')}),
+            a Debt-to-Equity Ratio of {format_ratio(de_ratio)} ({SEV_PHRASE.get(debt_sev, 'not calculable')}),
+            and a Return on Equity of {format_ratio(roe, suffix='%')} ({SEV_PHRASE.get(roe_sev, 'not calculable')}).
+            {overall_assessment}
             """,
             styles["BodyText"]
         )
