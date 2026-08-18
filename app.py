@@ -55,13 +55,15 @@ st.set_page_config(
 )
 
 # ---------------- Brand / Theme ----------------
+# A restrained navy / gold palette, applied with flat colour and thin
+# borders rather than gradients or heavy shadows.
 
 NAVY = "#0B1F3A"
 NAVY_LIGHT = "#16345C"
-NAVY_SOFT = "#EEF2F8"
 GOLD = "#B08D2E"
 GOLD_LIGHT = "#D9B44A"
 MUTED = "#6B7280"
+BORDER = "#E5E9F0"
 
 
 def inject_custom_css():
@@ -83,52 +85,53 @@ def inject_custom_css():
             background-color: #FBFBFC;
         }}
 
-        /* ---- Sidebar ---- */
+        /* ---- Sidebar: light and quiet, used only for data upload ---- */
         [data-testid="stSidebar"] {{
-            background: linear-gradient(180deg, {NAVY} 0%, {NAVY_LIGHT} 100%);
+            background-color: #F7F8FB;
+            border-right: 1px solid {BORDER};
         }}
         [data-testid="stSidebar"] h1,
         [data-testid="stSidebar"] h2,
-        [data-testid="stSidebar"] h3,
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] .stMarkdown p,
-        [data-testid="stSidebar"] .stCaption,
-        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{
-            color: #E7ECF5 !important;
+        [data-testid="stSidebar"] h3 {{
+            color: {NAVY} !important;
+            font-size: 1.05rem !important;
         }}
-        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {{
-            background-color: #FFFFFF;
-            border: 1px dashed rgba(255,255,255,0.35);
-            border-radius: 10px;
+
+        /* ---- Top navigation bar ---- */
+        .st-key-topnav {{
+            border-bottom: 1px solid {BORDER};
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.8rem;
         }}
-        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] * {{
+        .st-key-topnav button {{
+            width: 100%;
+            white-space: nowrap;
+        }}
+        .st-key-topnav button p {{
+            white-space: nowrap;
+        }}
+        .st-key-topnav button[kind="secondary"],
+        .st-key-topnav [data-testid="stBaseButton-secondary"] {{
+            background-color: transparent !important;
+            color: {MUTED} !important;
+            border: 1px solid transparent !important;
+            box-shadow: none !important;
+            font-weight: 600 !important;
+        }}
+        .st-key-topnav button[kind="secondary"]:hover,
+        .st-key-topnav [data-testid="stBaseButton-secondary"]:hover {{
+            background-color: #EFF2F7 !important;
             color: {NAVY} !important;
         }}
-        [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {{
+        .st-key-topnav button[kind="primary"],
+        .st-key-topnav [data-testid="stBaseButton-primary"] {{
             background-color: {GOLD} !important;
             color: #FFFFFF !important;
             border: none !important;
-        }}
-        [data-testid="stSidebar"] [data-testid="stFileUploaderFile"] {{
-            color: {NAVY} !important;
-            background-color: #FFFFFF;
-            border-radius: 8px;
-        }}
-        [data-testid="stSidebar"] [data-testid="stFileUploaderFile"] * {{
-            color: {NAVY} !important;
-        }}
-        [data-testid="stSidebar"] hr {{
-            border-color: rgba(255,255,255,0.15);
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label {{
-            padding: 0.35rem 0.6rem;
-            border-radius: 6px;
-        }}
-        [data-testid="stSidebar"] [role="radiogroup"] label:hover {{
-            background-color: rgba(255,255,255,0.08);
+            font-weight: 600 !important;
         }}
 
-        /* ---- Buttons ---- */
+        /* ---- Buttons (elsewhere in the app) ---- */
         .stButton > button, .stDownloadButton > button {{
             background-color: {GOLD};
             color: #FFFFFF;
@@ -156,26 +159,26 @@ def inject_custom_css():
             font-weight: 600;
         }}
 
-        /* ---- Bordered containers as cards ---- */
+        /* ---- Bordered containers used as flat cards ---- */
         div[data-testid="stVerticalBlockBorderWrapper"] {{
-            border-radius: 12px !important;
-            box-shadow: 0 1px 4px rgba(11,31,58,0.08);
+            border-radius: 10px !important;
+            box-shadow: none !important;
         }}
 
         /* ---- Alerts ---- */
         [data-testid="stAlert"] {{
-            border-radius: 10px;
+            border-radius: 8px;
         }}
 
         /* ---- Dataframes ---- */
         [data-testid="stDataFrame"] {{
-            border-radius: 10px;
+            border-radius: 8px;
             overflow: hidden;
-            border: 1px solid #E7EAF0;
+            border: 1px solid {BORDER};
         }}
 
         hr {{
-            border-color: #E5E9F0;
+            border-color: {BORDER};
         }}
         </style>
         """,
@@ -183,21 +186,52 @@ def inject_custom_css():
     )
 
 
-def render_hero(title, subtitle, icon="📊"):
+NAV_PAGES = [
+    ("Home", "🏠"),
+    ("Ratio Analysis", "📈"),
+    ("Company Comparison", "📊"),
+    ("Financial Report", "📄"),
+]
+
+
+def render_topbar():
+    """A flat, underline-free top navigation bar: brand mark on the left,
+    one button per page on the right. The active page is a solid gold
+    pill (Streamlit's `primary` button style); the rest are plain text
+    that only picks up colour on hover — quiet until you need it."""
+    with st.container(key="topnav"):
+        cols = st.columns([2.6, 1.1, 1.6, 1.9, 1.6])
+        with cols[0]:
+            st.markdown(
+                f"<div style='font-family:\"Playfair Display\", Georgia, serif; "
+                f"font-weight:700; font-size:1.1rem; color:{NAVY}; padding-top:0.55rem; "
+                f"white-space:nowrap;'>"
+                f"📊 Financial Ratio Analysis Tool</div>",
+                unsafe_allow_html=True,
+            )
+        for col, (name, icon) in zip(cols[1:], NAV_PAGES):
+            with col:
+                is_active = st.session_state.get("active_page", "Home") == name
+                if st.button(
+                    f"{icon}  {name}",
+                    key=f"nav_{name}",
+                    type="primary" if is_active else "secondary",
+                ):
+                    st.session_state["active_page"] = name
+                    st.rerun()
+
+
+def render_page_header(title, subtitle, icon="📊"):
+    """A flat, document-style page header — no colour block, no gradient,
+    just the serif title and a muted one-line description."""
     st.markdown(
         f"""
-        <div style="background: linear-gradient(135deg, {NAVY} 0%, {NAVY_LIGHT} 100%);
-                    padding: 2rem 2.4rem; border-radius: 14px; margin-bottom: 1.6rem;
-                    box-shadow: 0 6px 20px rgba(11,31,58,0.22);">
-          <div style="color:{GOLD_LIGHT}; font-size:0.8rem; letter-spacing:0.16em;
-                      text-transform:uppercase; font-weight:700;">
-            {icon} Financial Ratio Analysis Tool
+        <div style="margin-bottom:1.5rem;">
+          <div style="font-family:'Playfair Display', Georgia, serif; font-weight:700;
+                      font-size:1.9rem; color:{NAVY}; line-height:1.25;">
+            {icon} {title}
           </div>
-          <div style="color:#FFFFFF; font-family:'Playfair Display', Georgia, serif;
-                      font-size:2.15rem; font-weight:700; margin-top:0.35rem; line-height:1.2;">
-            {title}
-          </div>
-          <div style="color:#C3CCDC; font-size:1rem; margin-top:0.5rem;">
+          <div style="color:{MUTED}; font-size:0.98rem; margin-top:0.35rem;">
             {subtitle}
           </div>
         </div>
@@ -214,7 +248,7 @@ def render_bar_chart(data, color=GOLD, height=320):
     df.columns = ["Category", "Amount"]
     chart = (
         alt.Chart(df)
-        .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5, size=54)
+        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=54)
         .encode(
             x=alt.X("Category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
             y=alt.Y("Amount:Q", title="Amount (£)", axis=alt.Axis(format=",.0f")),
@@ -225,7 +259,7 @@ def render_bar_chart(data, color=GOLD, height=320):
             ],
         )
         .properties(height=height)
-        .configure_axis(gridColor="#EEF1F5", domainColor="#D8DEE9", tickColor="#D8DEE9")
+        .configure_axis(gridColor="#EEF1F5", domainColor=BORDER, tickColor=BORDER)
         .configure_view(strokeWidth=0)
     )
     st.altair_chart(chart, width="stretch")
@@ -240,24 +274,46 @@ from data_extraction import extract_financial_data, METRIC_LABELS
 METRICS = list(METRIC_LABELS.keys())
 
 
+def _prettify_filename(filename):
+    """Turn 'Acme_Financials_2024.xlsx' into 'Acme Financials 2024' for use
+    as a default company name. Short all-caps tokens (e.g. 'PLC') are left
+    as-is rather than title-cased."""
+    base = re.sub(r"\.[^.]+$", "", str(filename))
+    base = re.sub(r"[_\-]+", " ", base).strip()
+    base = re.sub(r"\s+", " ", base)
+    words = []
+    for w in base.split(" "):
+        if w.isupper() and 1 < len(w) <= 5:
+            words.append(w)
+        else:
+            words.append(w.capitalize())
+    return " ".join(words)
+
+
 def sync_company_data(prefix, uploaded_file, default_path, label):
     """
     Runs auto-detection only when the uploaded file actually changes (not
     on every rerun), and seeds st.session_state[f"{prefix}_values"] — a
-    plain dict, not a widget-bound key — with the detected values.
+    plain dict, not a widget-bound key — with the detected values. The
+    same pattern is used for the company name: a plain session_state
+    string, refreshed only when the file changes, and otherwise editable
+    without being clobbered.
 
-    Using a plain dict (rather than reading widget keys directly) matters
-    because Streamlit clears a widget's session_state entry whenever that
-    widget isn't rendered in a given script run (e.g. after navigating
-    away from the Home page). Storing values in an ordinary dict keeps
-    them available on every page regardless of which widgets are visible.
+    Using a plain dict/string (rather than reading widget keys directly)
+    matters because Streamlit clears a widget's session_state entry
+    whenever that widget isn't rendered in a given script run (e.g. after
+    navigating away from the Home page). Storing values outside any
+    widget keeps them available on every page regardless of which
+    widgets are currently visible.
     """
     if uploaded_file is not None:
         file_key = f"{uploaded_file.name}:{uploaded_file.size}"
         source, filename = uploaded_file, uploaded_file.name
+        guessed_name = _prettify_filename(uploaded_file.name)
     else:
         file_key = "__default__"
         source, filename = default_path, default_path
+        guessed_name = label
 
     state_key = f"{prefix}_file_key"
     if st.session_state.get(state_key) != file_key:
@@ -268,16 +324,35 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
         st.session_state[f"{prefix}_values"] = {
             metric: float((values or {}).get(metric, 0.0)) for metric in METRICS
         }
+        st.session_state[f"{prefix}_default_company_name"] = guessed_name
+        st.session_state[f"{prefix}_company_name"] = guessed_name
 
     if f"{prefix}_values" not in st.session_state:
         st.session_state[f"{prefix}_values"] = {metric: 0.0 for metric in METRICS}
+    if f"{prefix}_company_name" not in st.session_state:
+        st.session_state[f"{prefix}_company_name"] = label
 
 
 def company_values(prefix):
     return dict(st.session_state[f"{prefix}_values"])
 
 
+def render_company_name_field(prefix):
+    file_key = st.session_state.get(f"{prefix}_file_key", "default")
+    key_suffix = re.sub(r"[^a-zA-Z0-9_]", "_", str(file_key))
+    default_name = st.session_state.get(f"{prefix}_default_company_name", "")
+    name = st.text_input(
+        "Company name (used on the report)",
+        value=default_name,
+        key=f"widget_{prefix}_company_name_{key_suffix}",
+    )
+    st.session_state[f"{prefix}_company_name"] = name.strip()
+    st.caption("Auto-filled from the uploaded file's name — edit if you'd like it to read differently.")
+
+
 def render_data_review(prefix, title):
+    render_company_name_field(prefix)
+
     error = st.session_state.get(f"{prefix}_extract_error")
     if error:
         st.warning(f"⚠️ {error}")
@@ -343,6 +418,8 @@ sync_company_data("b", uploaded_file_b, "financial_data_company_b.xlsx", "Compan
 
 company_a = company_values("a")
 company_b = company_values("b")
+company_name_a = st.session_state.get("a_company_name") or "Company A"
+company_name_b = st.session_state.get("b_company_name") or "Company B"
 
 # ---------- Company A ----------
 revenue = company_a["revenue"]
@@ -379,6 +456,10 @@ def generate_pdf():
     BRAND_NAVY = colors.HexColor("#0B1F3A")
     BRAND_GOLD = colors.HexColor("#B08D2E")
     BRAND_SOFT = colors.HexColor("#F4F6FA")
+
+    report_company = company_name_a or "Company A"
+    detected_year_a = (st.session_state.get("a_meta") or {}).get("detected_year")
+    period_label = f"Financial Year {detected_year_a}" if detected_year_a else "the latest available period"
 
     title_style = ParagraphStyle(
         "MyTitle",
@@ -418,14 +499,14 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            "<b>Prepared by:</b> Muniba Ashraf\nBSc (Hons) Accounting & Finance",
+            f"<b>Company:</b> {report_company}",
             styles["Normal"]
         )
     )
 
     story.append(
         Paragraph(
-            "<b>Report Period:</b> Financial Year 2025",
+            f"<b>Report Period:</b> {period_label}",
             styles["Normal"]
         )
     )
@@ -447,7 +528,7 @@ def generate_pdf():
     )
     story.append(
         Paragraph(
-            f"Generated on: {datetime.now().strftime('%d %B %Y')}",
+            f"{report_company} · Generated on: {datetime.now().strftime('%d %B %Y')}",
             styles["Normal"]
         )
     )
@@ -463,10 +544,10 @@ def generate_pdf():
     story.append(
         Paragraph(
             f"""
-            This report presents a financial analysis of the company's financial
-            performance based on the 2025 financial statements.
+            This report presents a financial analysis of {report_company}'s financial
+            performance based on {period_label if detected_year_a else 'its most recent'} financial statements.
 
-            The company generated revenue of £{revenue:,.0f} and achieved a net profit
+            {report_company} generated revenue of £{revenue:,.0f} and achieved a net profit
             of £{net_profit:,.0f}. Liquidity, profitability and leverage ratios have
             been calculated to evaluate the company's overall financial health and
             operational efficiency.
@@ -701,13 +782,13 @@ def generate_pdf():
     story.append(
         Paragraph(
             f"""
-            The financial analysis indicates that the company maintained a stable
-            financial position during 2025. Liquidity remained satisfactory with a
+            The financial analysis indicates that {report_company} maintained a stable
+            financial position during {period_label if detected_year_a else 'the period reviewed'}. Liquidity remained satisfactory with a
             Current Ratio of {format_ratio(curr_ratio)},
             while the Debt-to-Equity Ratio of {format_ratio(de_ratio)}
             shows moderate financial leverage. The company generated a Return on Equity
             of {format_ratio(roe, suffix='%')}, indicating effective use
-            of shareholders' investment. Overall, the company demonstrates healthy
+            of shareholders' investment. Overall, {report_company} demonstrates healthy
             financial performance and operational efficiency.
             """,
             styles["BodyText"]
@@ -720,50 +801,45 @@ def generate_pdf():
     )
 
 
-# ---------------- Sidebar ----------------
+# ---------------- Top navigation ----------------
 
-st.sidebar.title("Navigation")
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "Home"
 
-page = st.sidebar.radio(
-    "Select a page",
-    [
-        "Home",
-        "Ratio Analysis",
-        "Company Comparison",
-        "Financial Report"
-    ]
-)
+render_topbar()
+page = st.session_state["active_page"]
 
 # ---------------- Home ----------------
 
 if page == "Home":
 
-    render_hero(
+    render_page_header(
         "Welcome",
-        "A polished, ratio-driven view of any company's financial statements — "
-        "upload a file, review the detected figures, and generate a client-ready report.",
+        "Upload a company's financial statements, review the detected figures, "
+        "and generate a client-ready ratio analysis report.",
+        icon="🏠",
     )
 
-    feature_cols = st.columns(5)
-    features = [
-        ("📈", "Liquidity", "Current ratio & short-term health"),
-        ("💰", "Profitability", "Margins & earning power"),
-        ("🏦", "Solvency", "Leverage & debt exposure"),
-        ("📊", "Comparison", "Company A vs. Company B"),
-        ("📄", "Reporting", "Boardroom-ready PDF export"),
-    ]
-    for col, (icon, label, desc) in zip(feature_cols, features):
-        with col:
-            with st.container(border=True):
-                st.markdown(
-                    f"<div style='font-size:1.4rem;'>{icon}</div>"
-                    f"<div style='font-weight:700; color:{NAVY}; margin-top:0.2rem;'>{label}</div>"
-                    f"<div style='color:{MUTED}; font-size:0.82rem; margin-top:0.15rem;'>{desc}</div>",
-                    unsafe_allow_html=True,
-                )
+    st.markdown(
+        f"""
+        <div style="color:{NAVY}; font-size:0.98rem; line-height:1.7;">
+        This tool calculates liquidity, profitability and leverage ratios from
+        almost any financial statement, then produces a polished PDF report.
+        It performs:
+        </div>
+        <ul style="color:{MUTED}; font-size:0.95rem; line-height:1.9; margin-top:0.6rem;">
+          <li><b style="color:{NAVY};">Liquidity analysis</b> — current ratio and short-term financial health</li>
+          <li><b style="color:{NAVY};">Profitability analysis</b> — gross and net margins</li>
+          <li><b style="color:{NAVY};">Solvency analysis</b> — leverage and debt exposure</li>
+          <li><b style="color:{NAVY};">Company comparison</b> — two companies, side by side</li>
+          <li><b style="color:{NAVY};">Report generation</b> — a boardroom-ready PDF export</li>
+        </ul>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
-        f"<div style='color:{MUTED}; font-size:0.85rem; margin-top:1.2rem;'>"
+        f"<div style='color:{MUTED}; font-size:0.85rem; margin-top:0.8rem;'>"
         f"Developed by <b style='color:{NAVY};'>Muniba Ashraf</b> · "
         f"BSc (Hons) Accounting &amp; Finance</div>",
         unsafe_allow_html=True,
@@ -777,20 +853,20 @@ if page == "Home":
         "that wasn't picked up correctly before moving to the other pages."
     )
 
-    st.subheader("Company A")
+    st.subheader(company_name_a)
     with st.container(border=True):
         render_data_review("a", "Company A")
 
-    with st.expander("Company B (used on the Company Comparison page)"):
+    with st.expander(f"{company_name_b} (used on the Company Comparison page)"):
         render_data_review("b", "Company B")
 
 ## ---------------- Ratio Analysis ----------------
 
 elif page == "Ratio Analysis":
 
-    render_hero(
+    render_page_header(
         "Ratio Analysis Dashboard",
-        "Liquidity, profitability and leverage at a glance, calculated from Company A's data.",
+        f"Liquidity, profitability and leverage at a glance, calculated from {company_name_a}'s data.",
         icon="📈",
     )
 
@@ -894,14 +970,14 @@ elif page == "Ratio Analysis":
 
 elif page == "Company Comparison":
 
-    render_hero(
+    render_page_header(
         "Company Comparison",
-        "Company A against Company B — raw figures and calculated ratios side by side.",
+        f"{company_name_a} against {company_name_b} — raw figures and calculated ratios side by side.",
         icon="📊",
     )
 
     comparison_df = pd.DataFrame({
-        "Company A": [
+        company_name_a: [
             revenue,
             gross_profit,
             net_profit,
@@ -910,7 +986,7 @@ elif page == "Company Comparison":
             total_debt,
             equity
         ],
-        "Company B": [
+        company_name_b: [
             revenue_b,
             gross_profit_b,
             net_profit_b,
@@ -954,14 +1030,14 @@ elif page == "Company Comparison":
     st.subheader("📐 Ratio Comparison")
 
     ratio_comparison_df = pd.DataFrame({
-        "Company A": [
+        company_name_a: [
             format_ratio(current_ratio(current_assets, current_liabilities)),
             format_ratio(gross_profit_margin(gross_profit, revenue), suffix="%"),
             format_ratio(net_profit_margin(net_profit, revenue), suffix="%"),
             format_ratio(debt_to_equity(total_debt, equity)),
             format_ratio(return_on_equity(net_profit, equity), suffix="%"),
         ],
-        "Company B": [
+        company_name_b: [
             format_ratio(current_ratio(current_assets_b, current_liabilities_b)),
             format_ratio(gross_profit_margin(gross_profit_b, revenue_b), suffix="%"),
             format_ratio(net_profit_margin(net_profit_b, revenue_b), suffix="%"),
@@ -986,10 +1062,10 @@ elif page == "Company Comparison":
 
 elif page == "Financial Report":
 
-    render_hero(
+    render_page_header(
         "Financial Report",
-        "Generate a polished, multi-page PDF — cover page, executive summary, "
-        "ratio analysis and charts — ready to share.",
+        f"Generate a polished, multi-page PDF for {company_name_a} — cover page, "
+        "executive summary, ratio analysis and charts — ready to share.",
         icon="📄",
     )
 
@@ -1000,7 +1076,8 @@ elif page == "Financial Report":
             f"<div style='color:{MUTED}; font-size:0.88rem; margin-top:0.25rem;'>"
             f"Includes an executive summary, recommendations, a detailed ratio "
             f"write-up, a summary table with interpretations, and two charts "
-            f"(Revenue vs Profit, Assets vs Liabilities).</div>",
+            f"(Revenue vs Profit, Assets vs Liabilities) — labelled with "
+            f"{company_name_a}'s name throughout, not ours.</div>",
             unsafe_allow_html=True,
         )
         st.write("")
