@@ -671,8 +671,8 @@ st.sidebar.caption(
     "wasn't picked up correctly."
 )
 
-sync_company_data("a", uploaded_file_a, "Financial_data.xlsx", "Company A")
-sync_company_data("b", uploaded_file_b, "financial_data_company_b.xlsx", "Company B")
+sync_company_data("a", uploaded_file_a, "Financial_data.xlsx", "Alpine Retail Ltd")
+sync_company_data("b", uploaded_file_b, "financial_data_company_b.xlsx", "Beacon Manufacturing Ltd")
 
 company_a = company_values("a")
 company_b = company_values("b")
