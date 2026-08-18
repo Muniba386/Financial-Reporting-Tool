@@ -23,10 +23,26 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER
 
 from ratios import (
     current_ratio,
+    quick_ratio,
+    cash_ratio,
+    working_capital,
     gross_profit_margin,
+    operating_profit_margin,
     net_profit_margin,
+    debtor_turnover,
+    debtor_days,
+    inventory_turnover,
+    inventory_days,
+    creditor_turnover,
+    creditor_days,
+    asset_turnover,
     debt_to_equity,
+    debt_ratio,
+    equity_ratio,
+    interest_coverage_ratio,
     return_on_equity,
+    return_on_assets,
+    return_on_capital_employed,
     format_ratio
 )
 from analysis import (
@@ -34,7 +50,8 @@ from analysis import (
     profitability_analysis,
     debt_analysis,
     gross_margin_analysis,
-    roe_analysis
+    roe_analysis,
+    efficiency_analysis
 )
 
 
@@ -82,6 +99,7 @@ PANEL = "#F0E9DB"
 CATEGORY_COLORS = {
     "Liquidity": "#1B4C7E",
     "Profitability": "#1C6B43",
+    "Efficiency": "#A34E27",
     "Leverage": "#6B3566",
     "Returns": "#0C6860",
 }
@@ -260,6 +278,7 @@ def inject_custom_css():
            card" cue rather than a flat, undifferentiated grid. */
         .st-key-tile_liquidity div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Liquidity']} !important; }}
         .st-key-tile_profitability div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Profitability']} !important; }}
+        .st-key-tile_efficiency div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Efficiency']} !important; }}
         .st-key-tile_leverage div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Leverage']} !important; }}
         .st-key-tile_returns div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Returns']} !important; }}
 
@@ -383,9 +402,27 @@ inject_custom_css()
 
 # ---------------- Read Financial Data (flexible upload) ----------------
 
-from data_extraction import extract_financial_data, METRIC_LABELS
+from data_extraction import extract_financial_data, METRIC_LABELS, OPTIONAL_METRICS
 
 METRICS = list(METRIC_LABELS.keys())
+
+# The 15 fields grouped the way an accountant would read a set of
+# statements — income statement first, then the balance sheet split into
+# current items and everything else — rather than one flat, unlabeled
+# grid of 15 number inputs.
+FIELD_GROUPS = [
+    ("Income Statement", [
+        "revenue", "cost_of_sales", "gross_profit",
+        "operating_profit", "net_profit", "interest_expense",
+    ]),
+    ("Current Assets & Liabilities", [
+        "current_assets", "inventory", "accounts_receivable",
+        "cash", "current_liabilities", "accounts_payable",
+    ]),
+    ("Other Balance Sheet", [
+        "total_assets", "total_debt", "equity",
+    ]),
+]
 
 
 def _prettify_filename(filename):
@@ -449,6 +486,67 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
 
 def company_values(prefix):
     return dict(st.session_state[f"{prefix}_values"])
+
+
+RATIO_CATEGORIES = ["Liquidity", "Profitability", "Efficiency", "Leverage", "Returns"]
+
+
+def compute_ratio_set(v):
+    """The full "professional scale" ratio set, computed and formatted in
+    one place so the Ratio Analysis breakdown, Company Comparison table,
+    and PDF report all show exactly the same numbers rather than three
+    separate re-implementations drifting apart. v is a dict shaped like
+    company_values(prefix) — one of the 15 raw line items per key.
+    Returns a list of (category, label, formatted_value) tuples."""
+    money = lambda x: f"£{x:,.0f}"
+    return [
+        ("Liquidity", "Current Ratio",
+         format_ratio(current_ratio(v["current_assets"], v["current_liabilities"]))),
+        ("Liquidity", "Quick Ratio (Acid-Test)",
+         format_ratio(quick_ratio(v["current_assets"], v["inventory"], v["current_liabilities"]))),
+        ("Liquidity", "Cash Ratio",
+         format_ratio(cash_ratio(v["cash"], v["current_liabilities"]))),
+        ("Liquidity", "Working Capital",
+         money(working_capital(v["current_assets"], v["current_liabilities"]))),
+
+        ("Profitability", "Gross Profit Margin",
+         format_ratio(gross_profit_margin(v["gross_profit"], v["revenue"]), suffix="%")),
+        ("Profitability", "Operating Profit Margin",
+         format_ratio(operating_profit_margin(v["operating_profit"], v["revenue"]), suffix="%")),
+        ("Profitability", "Net Profit Margin",
+         format_ratio(net_profit_margin(v["net_profit"], v["revenue"]), suffix="%")),
+
+        ("Efficiency", "Debtor (Receivables) Turnover",
+         format_ratio(debtor_turnover(v["revenue"], v["accounts_receivable"]), suffix="x")),
+        ("Efficiency", "Debtor Days",
+         format_ratio(debtor_days(v["revenue"], v["accounts_receivable"]), decimals=1, suffix=" days")),
+        ("Efficiency", "Inventory Turnover",
+         format_ratio(inventory_turnover(v["cost_of_sales"], v["inventory"]), suffix="x")),
+        ("Efficiency", "Inventory Days",
+         format_ratio(inventory_days(v["cost_of_sales"], v["inventory"]), decimals=1, suffix=" days")),
+        ("Efficiency", "Creditor (Payables) Turnover",
+         format_ratio(creditor_turnover(v["cost_of_sales"], v["accounts_payable"]), suffix="x")),
+        ("Efficiency", "Creditor Days",
+         format_ratio(creditor_days(v["cost_of_sales"], v["accounts_payable"]), decimals=1, suffix=" days")),
+        ("Efficiency", "Asset Turnover",
+         format_ratio(asset_turnover(v["revenue"], v["total_assets"]), suffix="x")),
+
+        ("Leverage", "Debt to Equity",
+         format_ratio(debt_to_equity(v["total_debt"], v["equity"]))),
+        ("Leverage", "Debt Ratio",
+         format_ratio(debt_ratio(v["total_debt"], v["total_assets"]))),
+        ("Leverage", "Equity Ratio",
+         format_ratio(equity_ratio(v["equity"], v["total_assets"]))),
+        ("Leverage", "Interest Coverage Ratio",
+         format_ratio(interest_coverage_ratio(v["operating_profit"], v["interest_expense"]), suffix="x")),
+
+        ("Returns", "Return on Equity",
+         format_ratio(return_on_equity(v["net_profit"], v["equity"]), suffix="%")),
+        ("Returns", "Return on Assets",
+         format_ratio(return_on_assets(v["net_profit"], v["total_assets"]), suffix="%")),
+        ("Returns", "Return on Capital Employed",
+         format_ratio(return_on_capital_employed(v["operating_profit"], v["total_assets"], v["current_liabilities"]), suffix="%")),
+    ]
 
 
 def is_sample_data(prefix):
@@ -523,22 +621,34 @@ def render_data_review(prefix, title):
     file_key = st.session_state.get(f"{prefix}_file_key", "default")
     key_suffix = re.sub(r"[^a-zA-Z0-9_]", "_", str(file_key))
 
-    cols = st.columns(2)
-    for i, metric in enumerate(METRICS):
-        with cols[i % 2]:
-            new_val = st.number_input(
-                METRIC_LABELS[metric],
-                value=float(values.get(metric, 0.0)),
-                key=f"widget_{prefix}_{metric}_{key_suffix}",
-                step=100.0,
-                format="%.2f"
-            )
-            values[metric] = new_val
-            info = match_info.get(metric)
-            if info:
-                st.caption(f"Matched \"{info['matched_label']}\" ({info['confidence']*100:.0f}% confidence)")
-            else:
-                st.caption("Not detected — enter manually")
+    for group_title, group_metrics in FIELD_GROUPS:
+        st.markdown(
+            f"<div style='color:{MUTED}; font-size:0.78rem; font-weight:700; "
+            f"text-transform:uppercase; letter-spacing:0.07em; margin:1.1rem 0 0.4rem 0;'>"
+            f"{group_title}</div>",
+            unsafe_allow_html=True,
+        )
+        cols = st.columns(2)
+        for i, metric in enumerate(group_metrics):
+            with cols[i % 2]:
+                label = METRIC_LABELS[metric]
+                if metric in OPTIONAL_METRICS:
+                    label += " (optional)"
+                new_val = st.number_input(
+                    label,
+                    value=float(values.get(metric, 0.0)),
+                    key=f"widget_{prefix}_{metric}_{key_suffix}",
+                    step=100.0,
+                    format="%.2f"
+                )
+                values[metric] = new_val
+                info = match_info.get(metric)
+                if info:
+                    st.caption(f"Matched \"{info['matched_label']}\" ({info['confidence']*100:.0f}% confidence)")
+                elif metric in OPTIONAL_METRICS:
+                    st.caption("Not detected — not all statements report this; leave as 0 if not applicable")
+                else:
+                    st.caption("Not detected — enter manually")
     st.session_state[f"{prefix}_values"] = values
 
 
@@ -571,19 +681,35 @@ company_name_b = st.session_state.get("b_company_name") or "Company B"
 
 # ---------- Company A ----------
 revenue = company_a["revenue"]
+cost_of_sales = company_a["cost_of_sales"]
 gross_profit = company_a["gross_profit"]
+operating_profit = company_a["operating_profit"]
 net_profit = company_a["net_profit"]
+interest_expense = company_a["interest_expense"]
+inventory = company_a["inventory"]
+accounts_receivable = company_a["accounts_receivable"]
+cash = company_a["cash"]
 current_assets = company_a["current_assets"]
+accounts_payable = company_a["accounts_payable"]
 current_liabilities = company_a["current_liabilities"]
+total_assets = company_a["total_assets"]
 total_debt = company_a["total_debt"]
 equity = company_a["equity"]
 
 # ---------- Company B ----------
 revenue_b = company_b["revenue"]
+cost_of_sales_b = company_b["cost_of_sales"]
 gross_profit_b = company_b["gross_profit"]
+operating_profit_b = company_b["operating_profit"]
 net_profit_b = company_b["net_profit"]
+interest_expense_b = company_b["interest_expense"]
+inventory_b = company_b["inventory"]
+accounts_receivable_b = company_b["accounts_receivable"]
+cash_b = company_b["cash"]
 current_assets_b = company_b["current_assets"]
+accounts_payable_b = company_b["accounts_payable"]
 current_liabilities_b = company_b["current_liabilities"]
+total_assets_b = company_b["total_assets"]
 total_debt_b = company_b["total_debt"]
 equity_b = company_b["equity"]
 
@@ -776,6 +902,7 @@ def generate_pdf():
     roe = return_on_equity(net_profit, equity)
     gp_margin = gross_profit_margin(gross_profit, revenue)
     np_margin = net_profit_margin(net_profit, revenue)
+    inv_turnover = inventory_turnover(cost_of_sales, inventory)
 
     story.append(
         Paragraph(
@@ -841,6 +968,7 @@ def generate_pdf():
         ["Current Ratio", format_ratio(curr_ratio), liquidity_analysis(curr_ratio)[0]],
         ["Gross Profit Margin", format_ratio(gp_margin, suffix="%"), gross_margin_analysis(gp_margin)[0]],
         ["Net Profit Margin", format_ratio(np_margin, suffix="%"), profitability_analysis(np_margin)[0]],
+        ["Inventory Turnover", format_ratio(inv_turnover, suffix="x"), efficiency_analysis(inv_turnover)[0]],
         ["Debt to Equity", format_ratio(de_ratio), debt_analysis(de_ratio)[0]],
         ["Return on Equity", format_ratio(roe, suffix="%"), roe_analysis(roe)[0]],
     ]
@@ -868,6 +996,46 @@ def generate_pdf():
             ratio_summary_table
         ])
     )
+    story.append(Spacer(1, 20))
+
+    # ---------------- Full Ratio Breakdown ----------------
+    # Every ratio computed from the figures on the Home page, not just the
+    # five headline ones above — the same underlying numbers as the app's
+    # "Full Ratio Breakdown" section, so the report and the app never
+    # disagree with each other.
+
+    story.append(PageBreak())
+    story.append(Paragraph("<b>Full Ratio Breakdown</b>", styles["Heading1"]))
+    story.append(Spacer(1, 6))
+    story.append(
+        Paragraph(
+            "Every ratio calculated from the figures provided, grouped by "
+            "category. Ratios show N/A where the underlying figures weren't "
+            "available — several are optional fields not every financial "
+            "statement reports.",
+            styles["BodyText"]
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    breakdown_data = [["Category", "Ratio", "Value"]]
+    for cat, label, value in compute_ratio_set(company_a):
+        breakdown_data.append([cat, label, value])
+
+    breakdown_table = Table(breakdown_data, colWidths=[90, 210, 120], repeatRows=1)
+    breakdown_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("TEXTCOLOR", (0, 1), (0, -1), BRAND_GOLD),
+        ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
+    ]))
+    story.append(breakdown_table)
     story.append(Spacer(1, 20))
 
     # ---------------- Charts ----------------
@@ -969,28 +1137,51 @@ def generate_pdf():
             )
         )
         story.append(Spacer(1, 10))
+        story.append(Paragraph("<b>Financial Figures</b>", styles["Heading2"]))
+        story.append(Spacer(1, 6))
 
-        curr_ratio_b = current_ratio(current_assets_b, current_liabilities_b)
-        de_ratio_b = debt_to_equity(total_debt_b, equity_b)
-        roe_b = return_on_equity(net_profit_b, equity_b)
-
-        comparison_data = [
-            ["Metric", report_company, company_name_b],
-            ["Revenue", f"{revenue:,.0f}", f"{revenue_b:,.0f}"],
-            ["Gross Profit", f"{gross_profit:,.0f}", f"{gross_profit_b:,.0f}"],
-            ["Net Profit", f"{net_profit:,.0f}", f"{net_profit_b:,.0f}"],
-            ["Current Ratio", format_ratio(curr_ratio), format_ratio(curr_ratio_b)],
-            ["Debt to Equity", format_ratio(de_ratio), format_ratio(de_ratio_b)],
-            ["Return on Equity", format_ratio(roe, suffix="%"), format_ratio(roe_b, suffix="%")],
-        ]
-        comparison_table = Table(comparison_data, colWidths=[150, 130, 130])
-        comparison_table.setStyle(TableStyle([
+        all_metrics_in_order = [m for _, group in FIELD_GROUPS for m in group]
+        raw_data = [["Metric", report_company, company_name_b]]
+        for m in all_metrics_in_order:
+            raw_data.append([
+                METRIC_LABELS[m],
+                f"{company_a[m]:,.0f}",
+                f"{company_b[m]:,.0f}",
+            ])
+        raw_table = Table(raw_data, colWidths=[170, 130, 130], repeatRows=1)
+        raw_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
             ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
+        ]))
+        story.append(raw_table)
+        story.append(Spacer(1, 20))
+
+        story.append(Paragraph("<b>Full Ratio Comparison</b>", styles["Heading2"]))
+        story.append(Spacer(1, 6))
+
+        rows_a = compute_ratio_set(company_a)
+        rows_b = compute_ratio_set(company_b)
+        comparison_data = [["Category", "Ratio", report_company, company_name_b]]
+        for (cat, label, val_a), (_, _, val_b) in zip(rows_a, rows_b):
+            comparison_data.append([cat, label, val_a, val_b])
+
+        comparison_table = Table(comparison_data, colWidths=[80, 175, 85, 85], repeatRows=1)
+        comparison_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+            ("TEXTCOLOR", (0, 1), (0, -1), BRAND_GOLD),
+            ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
         ]))
         story.append(comparison_table)
@@ -1066,25 +1257,26 @@ elif page == "Ratio Analysis":
 
     render_page_header(
         "Ratio Analysis Dashboard",
-        f"Liquidity, profitability and leverage at a glance, calculated from {company_name_a}'s data.",
+        f"Liquidity, profitability, efficiency, leverage and returns, calculated from {company_name_a}'s data.",
     )
 
     render_sample_data_notice(["a"])
     render_extraction_warning("a")
 
     curr_ratio = current_ratio(current_assets, current_liabilities)
-    gp_margin = gross_profit_margin(gross_profit, revenue)
     np_margin = net_profit_margin(net_profit, revenue)
+    inv_turnover = inventory_turnover(cost_of_sales, inventory)
     de_ratio = debt_to_equity(total_debt, equity)
     roe = return_on_equity(net_profit, equity)
 
     dashboard_metrics = [
         ("Liquidity", "Current Ratio", format_ratio(curr_ratio)),
         ("Profitability", "Net Profit Margin", format_ratio(np_margin, suffix="%")),
+        ("Efficiency", "Inventory Turnover", format_ratio(inv_turnover, suffix="x")),
         ("Leverage", "Debt to Equity", format_ratio(de_ratio)),
         ("Returns", "Return on Equity", format_ratio(roe, suffix="%")),
     ]
-    metric_cols = st.columns(4)
+    metric_cols = st.columns(5)
     for col, (tag, label, value) in zip(metric_cols, dashboard_metrics):
         with col:
             with st.container(key=f"tile_{tag.lower()}", border=True):
@@ -1101,8 +1293,32 @@ elif page == "Ratio Analysis":
 
     render_insight(liquidity_analysis(curr_ratio))
     render_insight(profitability_analysis(np_margin))
+    render_insight(efficiency_analysis(inv_turnover))
     render_insight(debt_analysis(de_ratio))
     render_insight(roe_analysis(roe))
+
+    st.divider()
+
+    st.subheader("Full Ratio Breakdown")
+    st.caption(
+        "Every ratio calculated from the figures on the Home page, grouped the "
+        "way an accountant would work through a set of statements. Ratios "
+        "show N/A where the underlying figures weren't provided — most are "
+        "optional fields not every financial statement reports."
+    )
+
+    ratio_rows = compute_ratio_set(company_a)
+    for category in RATIO_CATEGORIES:
+        st.markdown(
+            f"<div style='color:{CATEGORY_COLORS[category]}; font-size:0.78rem; font-weight:700; "
+            f"text-transform:uppercase; letter-spacing:0.07em; margin:1.1rem 0 0.4rem 0;'>{category}</div>",
+            unsafe_allow_html=True,
+        )
+        cat_df = pd.DataFrame(
+            [(label, value) for cat, label, value in ratio_rows if cat == category],
+            columns=["Ratio", company_name_a],
+        )
+        st.dataframe(cat_df, hide_index=True, width="stretch")
 
     st.divider()
 
@@ -1113,7 +1329,8 @@ elif page == "Ratio Analysis":
         [
             "Revenue vs Profit",
             "Assets vs Liabilities",
-            "Debt vs Equity"
+            "Debt vs Equity",
+            "Debtors vs Creditors"
         ]
     )
 
@@ -1164,6 +1381,21 @@ elif page == "Ratio Analysis":
             ]
         )
 
+    elif chart_option == "Debtors vs Creditors":
+
+        chart_data = pd.DataFrame(
+            {
+                "Amount": [
+                    accounts_receivable,
+                    accounts_payable
+                ]
+            },
+            index=[
+                "Accounts Receivable",
+                "Accounts Payable"
+            ]
+        )
+
     # Show the chart for ALL options
     render_bar_chart(chart_data)
 
@@ -1180,35 +1412,14 @@ elif page == "Company Comparison":
     render_extraction_warning("a")
     render_extraction_warning("b")
 
-    comparison_df = pd.DataFrame({
-        company_name_a: [
-            revenue,
-            gross_profit,
-            net_profit,
-            current_assets,
-            current_liabilities,
-            total_debt,
-            equity
-        ],
-        company_name_b: [
-            revenue_b,
-            gross_profit_b,
-            net_profit_b,
-            current_assets_b,
-            current_liabilities_b,
-            total_debt_b,
-            equity_b
-        ]
-    },
-        index=[
-            "Revenue",
-            "Gross Profit",
-            "Net Profit",
-            "Current Assets",
-            "Current Liabilities",
-            "Total Debt",
-            "Equity"
-    ])
+    all_metrics_in_order = [m for _, group in FIELD_GROUPS for m in group]
+    comparison_df = pd.DataFrame(
+        {
+            company_name_a: [company_a[m] for m in all_metrics_in_order],
+            company_name_b: [company_b[m] for m in all_metrics_in_order],
+        },
+        index=[METRIC_LABELS[m] for m in all_metrics_in_order],
+    )
 
     st.subheader("Financial Comparison")
     st.dataframe(comparison_df, width="stretch")
@@ -1232,35 +1443,29 @@ elif page == "Company Comparison":
 
     st.divider()
     st.subheader("Ratio Comparison")
-
-    ratio_comparison_df = pd.DataFrame({
-        company_name_a: [
-            format_ratio(current_ratio(current_assets, current_liabilities)),
-            format_ratio(gross_profit_margin(gross_profit, revenue), suffix="%"),
-            format_ratio(net_profit_margin(net_profit, revenue), suffix="%"),
-            format_ratio(debt_to_equity(total_debt, equity)),
-            format_ratio(return_on_equity(net_profit, equity), suffix="%"),
-        ],
-        company_name_b: [
-            format_ratio(current_ratio(current_assets_b, current_liabilities_b)),
-            format_ratio(gross_profit_margin(gross_profit_b, revenue_b), suffix="%"),
-            format_ratio(net_profit_margin(net_profit_b, revenue_b), suffix="%"),
-            format_ratio(debt_to_equity(total_debt_b, equity_b)),
-            format_ratio(return_on_equity(net_profit_b, equity_b), suffix="%"),
-        ]
-    }, index=[
-        "Current Ratio",
-        "Gross Profit Margin",
-        "Net Profit Margin",
-        "Debt to Equity",
-        "Return on Equity"
-    ])
-
-    st.dataframe(ratio_comparison_df, width="stretch")
     st.caption(
-        "Ratios use different scales (multiples vs. percentages), so they're "
-        "shown as a table rather than a single chart to avoid a misleading comparison."
+        "The full ratio set for both companies, side by side, grouped by category. "
+        "Shown as tables rather than charts since ratios use very different scales "
+        "(multiples, percentages, days) that a single chart would misrepresent."
     )
+
+    rows_a = compute_ratio_set(company_a)
+    rows_b = compute_ratio_set(company_b)
+    for category in RATIO_CATEGORIES:
+        st.markdown(
+            f"<div style='color:{CATEGORY_COLORS[category]}; font-size:0.78rem; font-weight:700; "
+            f"text-transform:uppercase; letter-spacing:0.07em; margin:1.1rem 0 0.4rem 0;'>{category}</div>",
+            unsafe_allow_html=True,
+        )
+        cat_df = pd.DataFrame(
+            [
+                (label_a, val_a, val_b)
+                for (cat_a, label_a, val_a), (_, _, val_b) in zip(rows_a, rows_b)
+                if cat_a == category
+            ],
+            columns=["Ratio", company_name_a, company_name_b],
+        )
+        st.dataframe(cat_df, hide_index=True, width="stretch")
 
     # ---------------- Financial Report ----------------
 

@@ -34,17 +34,44 @@ METRIC_SYNONYMS = {
     "gross_profit": [
         "gross profit", "gross income", "gross margin"
     ],
+    "operating_profit": [
+        "operating profit", "ebit", "profit from operations",
+        "operating income", "earnings before interest and tax",
+        "operating profit for the year"
+    ],
     "net_profit": [
         "net profit", "net income", "profit for the year",
         "profit after tax", "net earnings", "profit for the period",
         "profit attributable to owners", "net profit for the year",
         "profit/loss for the year"
     ],
+    "interest_expense": [
+        "interest expense", "finance costs", "finance cost",
+        "interest payable", "finance expense", "interest paid"
+    ],
+    "inventory": [
+        "inventory", "inventories", "stock", "closing stock", "stocks"
+    ],
+    "accounts_receivable": [
+        "accounts receivable", "trade receivables", "debtors",
+        "trade debtors", "receivables", "trade and other receivables"
+    ],
+    "cash": [
+        "cash", "cash and cash equivalents", "cash and bank",
+        "cash at bank", "bank and cash", "cash at bank and in hand"
+    ],
     "current_assets": [
         "current assets", "total current assets"
     ],
+    "accounts_payable": [
+        "accounts payable", "trade payables", "creditors",
+        "trade creditors", "payables", "trade and other payables"
+    ],
     "current_liabilities": [
         "current liabilities", "total current liabilities"
+    ],
+    "total_assets": [
+        "total assets", "total assets employed"
     ],
     "total_debt": [
         "total debt", "total liabilities", "total borrowings",
@@ -63,11 +90,29 @@ METRIC_LABELS = {
     "revenue": "Revenue",
     "cost_of_sales": "Cost of Sales",
     "gross_profit": "Gross Profit",
+    "operating_profit": "Operating Profit (EBIT)",
     "net_profit": "Net Profit",
+    "interest_expense": "Interest Expense",
+    "inventory": "Inventory",
+    "accounts_receivable": "Accounts Receivable (Debtors)",
+    "cash": "Cash & Cash Equivalents",
     "current_assets": "Current Assets",
+    "accounts_payable": "Accounts Payable (Creditors)",
     "current_liabilities": "Current Liabilities",
+    "total_assets": "Total Assets",
     "total_debt": "Total Debt",
     "equity": "Equity",
+}
+
+# Fields that many simpler financial statements won't report at all
+# (operating profit, interest expense, inventory, receivables, payables,
+# total assets are common omissions from a basic P&L/balance sheet
+# extract). Left at 0 with a clear "optional" note in the review UI
+# instead of being treated as a matching failure — a file missing only
+# these shouldn't trigger the "we couldn't recognize this file" warning.
+OPTIONAL_METRICS = {
+    "operating_profit", "interest_expense", "inventory",
+    "accounts_receivable", "cash", "accounts_payable", "total_assets",
 }
 
 YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
@@ -232,18 +277,25 @@ def extract_from_dataframe(df, preferred_year=None):
     # simply isn't a financial statement. Rather than silently showing a
     # dashboard full of confident-looking zeroes, flag it so the app can
     # surface a clear warning instead of a false sense that it worked.
-    total_metrics = len(METRIC_SYNONYMS)
-    matched_count = len(values)
+    #
+    # The threshold is based on the 8 CORE fields only, not all 15 — most
+    # real financial statements never report things like inventory,
+    # receivables/payables, or interest expense at all, so a perfectly
+    # good file that matches all 8 core fields but none of the 7 optional
+    # ones shouldn't trigger a "couldn't read this file" warning.
+    core_metrics = [m for m in METRIC_SYNONYMS if m not in OPTIONAL_METRICS]
+    total_core = len(core_metrics)
+    matched_core_count = sum(1 for m in core_metrics if m in values)
     warning = None
-    if matched_count == 0:
+    if matched_core_count == 0:
         warning = (
             "We couldn't recognize any of the expected financial line items "
             "(Revenue, Net Profit, Current Assets, etc.) in this file. All "
             "figures have been left at 0 — please enter them manually below."
         )
-    elif matched_count <= 3:
+    elif matched_core_count <= 3:
         warning = (
-            f"Only {matched_count} of {total_metrics} expected line items were "
+            f"Only {matched_core_count} of {total_core} core line items were "
             f"recognized in this file. Please check the figures below and fill "
             f"in anything that's missing."
         )

@@ -87,3 +87,27 @@ def roe_analysis(roe):
 
     else:
         return "Weak shareholder returns", "bad"
+
+
+
+def efficiency_analysis(inventory_turnover):
+    """Headline interpretation for the Efficiency category, based on how
+    many times a year inventory is sold and replaced. Rule-of-thumb bands
+    like the other four headline metrics — actual "good" turnover varies
+    a lot by industry, so this is a general guide, not a fixed standard."""
+
+    if inventory_turnover is None:
+        return (
+            "Inventory turnover unavailable: needs Cost of Sales and "
+            "Inventory, which weren't provided",
+            "unavailable",
+        )
+
+    if inventory_turnover >= 8:
+        return "Fast-moving inventory — efficient stock management", "good"
+
+    elif inventory_turnover >= 4:
+        return "Moderate inventory turnover", "medium"
+
+    else:
+        return "Slow-moving inventory — may indicate overstocking or weak sales", "bad"
