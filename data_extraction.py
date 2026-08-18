@@ -227,12 +227,34 @@ def extract_from_dataframe(df, preferred_year=None):
             "confidence": 1.0,
         }
 
+    # A structurally valid file (we found a label column and a value
+    # column) can still fail to match anything useful — e.g. a file that
+    # simply isn't a financial statement. Rather than silently showing a
+    # dashboard full of confident-looking zeroes, flag it so the app can
+    # surface a clear warning instead of a false sense that it worked.
+    total_metrics = len(METRIC_SYNONYMS)
+    matched_count = len(values)
+    warning = None
+    if matched_count == 0:
+        warning = (
+            "We couldn't recognize any of the expected financial line items "
+            "(Revenue, Net Profit, Current Assets, etc.) in this file. All "
+            "figures have been left at 0 — please enter them manually below."
+        )
+    elif matched_count <= 3:
+        warning = (
+            f"Only {matched_count} of {total_metrics} expected line items were "
+            f"recognized in this file. Please check the figures below and fill "
+            f"in anything that's missing."
+        )
+
     meta = {
         "label_column": str(label_col),
         "value_column": str(chosen_col),
         "detected_year": detected_year,
         "available_years": [y for _, y in year_cols],
         "match_info": match_info,
+        "warning": warning,
     }
     return values, meta
 

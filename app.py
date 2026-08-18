@@ -56,14 +56,43 @@ st.set_page_config(
 
 # ---------------- Brand / Theme ----------------
 # A restrained navy / gold palette, applied with flat colour and thin
-# borders rather than gradients or heavy shadows.
+# borders rather than gradients or heavy shadows. GOLD is deliberately a
+# deeper shade than a "true" gold — #B08D2E only carries 3.1:1 contrast
+# against white, below the 4.5:1 the W3C requires for normal text; #8A6D1F
+# carries 4.9:1 in both directions (as text-on-white and as white-on-fill),
+# so it passes AA while still reading as gold/bronze.
 
 NAVY = "#0B1F3A"
 NAVY_LIGHT = "#16345C"
-GOLD = "#B08D2E"
-GOLD_LIGHT = "#D9B44A"
+GOLD = "#8A6D1F"
 MUTED = "#6B7280"
 BORDER = "#E5E9F0"
+
+# One accent colour per ratio category — used only for small tags/labels,
+# never as a big colour block, so the app stays "classic" rather than
+# turning into a rainbow. Each carries 5:1+ contrast against white.
+CATEGORY_COLORS = {
+    "Liquidity": "#1D5FA3",
+    "Profitability": "#1E7B4D",
+    "Leverage": "#7A3E7A",
+    "Returns": "#0E7A72",
+}
+
+SEVERITY_BOX = {
+    "good": st.success,
+    "medium": st.info,
+    "bad": st.error,
+    "unavailable": st.warning,
+}
+
+
+def render_insight(result):
+    """result is a (message, severity) tuple from analysis.py. The box
+    colour always matches what the message says — a ratio that couldn't
+    be calculated is a warning, not a green success box, and a genuinely
+    weak ratio is a red flag, not a cheerful blue info box."""
+    text, severity = result
+    SEVERITY_BOX.get(severity, st.info)(text)
 
 
 def inject_custom_css():
@@ -97,14 +126,31 @@ def inject_custom_css():
             font-size: 1.05rem !important;
         }}
 
-        /* ---- Top navigation bar ---- */
+        /* ---- Top navigation bar ----
+           Wraps onto a second line rather than compressing/overlapping
+           when the window is too narrow for one row — this is what
+           actually fixes the nav on ordinary laptop widths, rather than
+           just tuning column ratios that only worked at one exact size. */
         .st-key-topnav {{
             border-bottom: 1px solid {BORDER};
-            padding-bottom: 0.5rem;
+            padding-bottom: 0.6rem;
             margin-bottom: 1.8rem;
         }}
+        .st-key-topnav [data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap !important;
+            row-gap: 0.5rem !important;
+            align-items: center !important;
+        }}
+        .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+            width: auto !important;
+            min-width: 0 !important;
+            flex: 0 1 auto !important;
+        }}
+        .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {{
+            flex: 1 1 auto !important;
+            min-width: 180px !important;
+        }}
         .st-key-topnav button {{
-            width: 100%;
             white-space: nowrap;
         }}
         .st-key-topnav button p {{
@@ -142,7 +188,7 @@ def inject_custom_css():
             transition: background-color 0.15s ease;
         }}
         .stButton > button:hover, .stDownloadButton > button:hover {{
-            background-color: #96771F;
+            background-color: #6E5518;
             color: #FFFFFF;
         }}
 
@@ -177,6 +223,15 @@ def inject_custom_css():
             border: 1px solid {BORDER};
         }}
 
+        /* ---- Tabs (Company A / Company B on the Home page) ---- */
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 1.5rem;
+        }}
+        .stTabs [aria-selected="true"] {{
+            color: {NAVY} !important;
+            font-weight: 700 !important;
+        }}
+
         hr {{
             border-color: {BORDER};
         }}
@@ -198,9 +253,10 @@ def render_topbar():
     """A flat, underline-free top navigation bar: brand mark on the left,
     one button per page on the right. The active page is a solid gold
     pill (Streamlit's `primary` button style); the rest are plain text
-    that only picks up colour on hover — quiet until you need it."""
+    that only picks up colour on hover. Wraps onto a second line on
+    narrower screens instead of overlapping (see the CSS above)."""
     with st.container(key="topnav"):
-        cols = st.columns([2.6, 1.1, 1.6, 1.9, 1.6])
+        cols = st.columns([2.4, 1, 1, 1, 1])
         with cols[0]:
             st.markdown(
                 f"<div style='font-family:\"Playfair Display\", Georgia, serif; "
@@ -320,7 +376,7 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
         values, meta = extract_financial_data(source, filename)
         st.session_state[state_key] = file_key
         st.session_state[f"{prefix}_meta"] = meta or {}
-        st.session_state[f"{prefix}_extract_error"] = (meta or {}).get("error")
+        st.session_state[f"{prefix}_extract_error"] = (meta or {}).get("error") or (meta or {}).get("warning")
         st.session_state[f"{prefix}_values"] = {
             metric: float((values or {}).get(metric, 0.0)) for metric in METRICS
         }
@@ -335,6 +391,39 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
 
 def company_values(prefix):
     return dict(st.session_state[f"{prefix}_values"])
+
+
+def is_sample_data(prefix):
+    return st.session_state.get(f"{prefix}_file_key", "__default__") == "__default__"
+
+
+def render_sample_data_notice(prefixes):
+    """A visible reminder — shown on every page that uses the data, not
+    just Home — when a company is still showing the bundled demo figures
+    rather than something the user uploaded. Without this, it's easy to
+    generate and hand someone a report full of fictitious numbers without
+    realising nothing was ever uploaded."""
+    names = []
+    for prefix in prefixes:
+        if is_sample_data(prefix):
+            names.append(company_name_a if prefix == "a" else company_name_b)
+    if names:
+        st.info(
+            f"ℹ️ Showing **sample data** for {' and '.join(names)} — upload a file "
+            f"in the sidebar to analyze real figures instead."
+        )
+
+
+def render_extraction_warning(prefix):
+    """Surfaces a file-reading problem on whichever page the user is
+    actually looking at, not only on the Home page — someone who jumps
+    straight to Ratio Analysis should still be told their numbers are 0
+    because the file couldn't be read, not left to assume the tool is
+    just broken."""
+    msg = st.session_state.get(f"{prefix}_extract_error")
+    if msg:
+        label = company_name_a if prefix == "a" else company_name_b
+        st.warning(f"⚠️ {label}: {msg}")
 
 
 def render_company_name_field(prefix):
@@ -382,7 +471,7 @@ def render_data_review(prefix, title):
                 METRIC_LABELS[metric],
                 value=float(values.get(metric, 0.0)),
                 key=f"widget_{prefix}_{metric}_{key_suffix}",
-                step=1000.0,
+                step=100.0,
                 format="%.2f"
             )
             values[metric] = new_val
@@ -454,12 +543,14 @@ def generate_pdf():
     from reportlab.lib.styles import ParagraphStyle
 
     BRAND_NAVY = colors.HexColor("#0B1F3A")
-    BRAND_GOLD = colors.HexColor("#B08D2E")
+    BRAND_GOLD = colors.HexColor("#8A6D1F")
     BRAND_SOFT = colors.HexColor("#F4F6FA")
 
     report_company = company_name_a or "Company A"
     detected_year_a = (st.session_state.get("a_meta") or {}).get("detected_year")
     period_label = f"Financial Year {detected_year_a}" if detected_year_a else "the latest available period"
+    a_is_sample = is_sample_data("a")
+    b_is_real = not is_sample_data("b")
 
     title_style = ParagraphStyle(
         "MyTitle",
@@ -517,6 +608,16 @@ def generate_pdf():
             styles["Normal"]
         )
     )
+
+    if a_is_sample:
+        story.append(Spacer(1, 10))
+        story.append(
+            Paragraph(
+                "<i>Note: this report was generated from sample/demo data — "
+                "upload a real file in the app to produce an actual analysis.</i>",
+                styles["Normal"]
+            )
+        )
 
     story.append(PageBreak())
 
@@ -678,11 +779,11 @@ def generate_pdf():
 
     ratio_summary_data = [
         ["Metric", "Value", "Interpretation"],
-        ["Current Ratio", format_ratio(curr_ratio), liquidity_analysis(curr_ratio)],
-        ["Gross Profit Margin", format_ratio(gp_margin, suffix="%"), gross_margin_analysis(gp_margin)],
-        ["Net Profit Margin", format_ratio(np_margin, suffix="%"), profitability_analysis(np_margin)],
-        ["Debt to Equity", format_ratio(de_ratio), debt_analysis(de_ratio)],
-        ["Return on Equity", format_ratio(roe, suffix="%"), roe_analysis(roe)],
+        ["Current Ratio", format_ratio(curr_ratio), liquidity_analysis(curr_ratio)[0]],
+        ["Gross Profit Margin", format_ratio(gp_margin, suffix="%"), gross_margin_analysis(gp_margin)[0]],
+        ["Net Profit Margin", format_ratio(np_margin, suffix="%"), profitability_analysis(np_margin)[0]],
+        ["Debt to Equity", format_ratio(de_ratio), debt_analysis(de_ratio)[0]],
+        ["Return on Equity", format_ratio(roe, suffix="%"), roe_analysis(roe)[0]],
     ]
 
     ratio_summary_table = Table(
@@ -714,7 +815,7 @@ def generate_pdf():
 
     money_formatter = FuncFormatter(lambda x, pos: f"£{x:,.0f}")
     NAVY_HEX = "#0B1F3A"
-    GOLD_HEX = "#B08D2E"
+    GOLD_HEX = "#8A6D1F"
 
     plt.rcParams["font.family"] = "sans-serif"
 
@@ -794,6 +895,47 @@ def generate_pdf():
             styles["BodyText"]
         )
     )
+
+    # ---------------- Optional comparison appendix ----------------
+    # Only included when Company B is a real upload, not the bundled
+    # sample — a "comparison" against fake demo numbers would be
+    # misleading in a report meant to go to someone else.
+
+    if b_is_real:
+        story.append(PageBreak())
+        story.append(
+            Paragraph(
+                f"<b>Appendix: Comparison with {company_name_b}</b>",
+                styles["Heading1"]
+            )
+        )
+        story.append(Spacer(1, 10))
+
+        curr_ratio_b = current_ratio(current_assets_b, current_liabilities_b)
+        de_ratio_b = debt_to_equity(total_debt_b, equity_b)
+        roe_b = return_on_equity(net_profit_b, equity_b)
+
+        comparison_data = [
+            ["Metric", report_company, company_name_b],
+            ["Revenue", f"{revenue:,.0f}", f"{revenue_b:,.0f}"],
+            ["Gross Profit", f"{gross_profit:,.0f}", f"{gross_profit_b:,.0f}"],
+            ["Net Profit", f"{net_profit:,.0f}", f"{net_profit_b:,.0f}"],
+            ["Current Ratio", format_ratio(curr_ratio), format_ratio(curr_ratio_b)],
+            ["Debt to Equity", format_ratio(de_ratio), format_ratio(de_ratio_b)],
+            ["Return on Equity", format_ratio(roe, suffix="%"), format_ratio(roe_b, suffix="%")],
+        ]
+        comparison_table = Table(comparison_data, colWidths=[150, 130, 130])
+        comparison_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#D8DEE9")),
+            ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
+        ]))
+        story.append(comparison_table)
+
     doc.build(
         story,
         onFirstPage=add_page_number,
@@ -853,11 +995,11 @@ if page == "Home":
         "that wasn't picked up correctly before moving to the other pages."
     )
 
-    st.subheader(company_name_a)
-    with st.container(border=True):
+    tab_a, tab_b = st.tabs([f"🏢 {company_name_a}", f"🏢 {company_name_b} (optional)"])
+    with tab_a:
         render_data_review("a", "Company A")
-
-    with st.expander(f"{company_name_b} (used on the Company Comparison page)"):
+    with tab_b:
+        st.caption("Used on the Company Comparison page. Leave this as sample data if you only need one company.")
         render_data_review("b", "Company B")
 
 ## ---------------- Ratio Analysis ----------------
@@ -870,6 +1012,9 @@ elif page == "Ratio Analysis":
         icon="📈",
     )
 
+    render_sample_data_notice(["a"])
+    render_extraction_warning("a")
+
     curr_ratio = current_ratio(current_assets, current_liabilities)
     gp_margin = gross_profit_margin(gross_profit, revenue)
     np_margin = net_profit_margin(net_profit, revenue)
@@ -878,7 +1023,7 @@ elif page == "Ratio Analysis":
 
     dashboard_metrics = [
         ("Liquidity", "Current Ratio", format_ratio(curr_ratio)),
-        ("Profitability", "Gross Profit Margin", format_ratio(gp_margin, suffix="%")),
+        ("Profitability", "Net Profit Margin", format_ratio(np_margin, suffix="%")),
         ("Leverage", "Debt to Equity", format_ratio(de_ratio)),
         ("Returns", "Return on Equity", format_ratio(roe, suffix="%")),
     ]
@@ -887,7 +1032,7 @@ elif page == "Ratio Analysis":
         with col:
             with st.container(border=True):
                 st.markdown(
-                    f"<div style='color:{GOLD}; font-size:0.72rem; letter-spacing:0.08em; "
+                    f"<div style='color:{CATEGORY_COLORS[tag]}; font-size:0.72rem; letter-spacing:0.08em; "
                     f"text-transform:uppercase; font-weight:700;'>{tag}</div>",
                     unsafe_allow_html=True,
                 )
@@ -897,11 +1042,10 @@ elif page == "Ratio Analysis":
 
     st.subheader("📋 Financial Insights")
 
-    st.success(liquidity_analysis(curr_ratio))
-
-    st.info(profitability_analysis(np_margin))
-
-    st.warning(debt_analysis(de_ratio))
+    render_insight(liquidity_analysis(curr_ratio))
+    render_insight(profitability_analysis(np_margin))
+    render_insight(debt_analysis(de_ratio))
+    render_insight(roe_analysis(roe))
 
     st.divider()
 
@@ -975,6 +1119,10 @@ elif page == "Company Comparison":
         f"{company_name_a} against {company_name_b} — raw figures and calculated ratios side by side.",
         icon="📊",
     )
+
+    render_sample_data_notice(["a", "b"])
+    render_extraction_warning("a")
+    render_extraction_warning("b")
 
     comparison_df = pd.DataFrame({
         company_name_a: [
@@ -1069,7 +1217,17 @@ elif page == "Financial Report":
         icon="📄",
     )
 
+    render_sample_data_notice(["a"])
+    render_extraction_warning("a")
+
     with st.container(border=True):
+        b_note = (
+            f" A comparison appendix with {company_name_b} will be included "
+            f"automatically since you've uploaded a file for them too."
+            if not is_sample_data("b") else
+            " Upload a Company B file in the sidebar to also include a "
+            "comparison appendix."
+        )
         st.markdown(
             f"<div style='font-weight:700; color:{NAVY}; font-size:1.05rem;'>"
             f"Financial Ratio Analysis Report</div>"
@@ -1077,7 +1235,7 @@ elif page == "Financial Report":
             f"Includes an executive summary, recommendations, a detailed ratio "
             f"write-up, a summary table with interpretations, and two charts "
             f"(Revenue vs Profit, Assets vs Liabilities) — labelled with "
-            f"{company_name_a}'s name throughout, not ours.</div>",
+            f"{company_name_a}'s name throughout, not ours.{b_note}</div>",
             unsafe_allow_html=True,
         )
         st.write("")

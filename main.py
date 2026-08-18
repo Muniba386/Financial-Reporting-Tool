@@ -48,15 +48,15 @@ print("------------------")
 
 print(liquidity_analysis(
     current_ratio(current_assets, current_liabilities)
-))
+)[0])
 
 print(profitability_analysis(
     net_profit_margin(net_profit, revenue)
-))
+)[0])
 
 print(debt_analysis(
     debt_to_equity(total_debt, equity)
-))
+)[0])
 
 
 print_report(
