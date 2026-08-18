@@ -55,27 +55,35 @@ st.set_page_config(
 )
 
 # ---------------- Brand / Theme ----------------
-# A restrained navy / gold palette, applied with flat colour and thin
-# borders rather than gradients or heavy shadows. GOLD is deliberately a
-# deeper shade than a "true" gold — #B08D2E only carries 3.1:1 contrast
-# against white, below the 4.5:1 the W3C requires for normal text; #8A6D1F
-# carries 4.9:1 in both directions (as text-on-white and as white-on-fill),
-# so it passes AA while still reading as gold/bronze.
+# A warm, "old-ledger" navy-and-brass palette instead of a cool grey/white
+# one — ivory backgrounds and a deepened navy read closer to a bound
+# accounting ledger or a private bank's stationery than a generic SaaS
+# dashboard. GOLD is tuned to an actual brass hue (warmer, more orange)
+# rather than the previous olive-gold, while keeping the exact same
+# accessibility bar: #9B6526 carries 4.9:1 contrast against white and
+# 4.62:1 against the new ivory background in both directions (as
+# text-on-background and as white-on-fill), clearing the 4.5:1 the W3C
+# requires for normal text either way.
 
-NAVY = "#0B1F3A"
-NAVY_LIGHT = "#16345C"
-GOLD = "#8A6D1F"
-MUTED = "#6B7280"
-BORDER = "#E5E9F0"
+NAVY = "#0A1930"
+NAVY_LIGHT = "#1E3A5F"
+GOLD = "#9B6526"
+GOLD_HOVER = "#7C501E"
+MUTED = "#6E6759"
+BORDER = "#E4DAC8"
+IVORY = "#FAF8F4"
+PANEL = "#F0E9DB"
 
 # One accent colour per ratio category — used only for small tags/labels,
 # never as a big colour block, so the app stays "classic" rather than
-# turning into a rainbow. Each carries 5:1+ contrast against white.
+# turning into a rainbow. Deepened to richer jewel tones to sit well
+# against the warmer ivory background; each still carries 6:1+ contrast
+# against both white and ivory.
 CATEGORY_COLORS = {
-    "Liquidity": "#1D5FA3",
-    "Profitability": "#1E7B4D",
-    "Leverage": "#7A3E7A",
-    "Returns": "#0E7A72",
+    "Liquidity": "#1B4C7E",
+    "Profitability": "#1C6B43",
+    "Leverage": "#6B3566",
+    "Returns": "#0C6860",
 }
 
 SEVERITY_BOX = {
@@ -111,12 +119,12 @@ def inject_custom_css():
         }}
 
         [data-testid="stAppViewContainer"] {{
-            background-color: #FBFBFC;
+            background-color: {IVORY};
         }}
 
         /* ---- Sidebar: light and quiet, used only for data upload ---- */
         [data-testid="stSidebar"] {{
-            background-color: #F7F8FB;
+            background-color: {PANEL};
             border-right: 1px solid {BORDER};
         }}
         [data-testid="stSidebar"] h1,
@@ -166,7 +174,7 @@ def inject_custom_css():
         }}
         .st-key-topnav button[kind="secondary"]:hover,
         .st-key-topnav [data-testid="stBaseButton-secondary"]:hover {{
-            background-color: #EFF2F7 !important;
+            background-color: {PANEL} !important;
             color: {NAVY} !important;
         }}
         .st-key-topnav button[kind="primary"],
@@ -188,7 +196,7 @@ def inject_custom_css():
             transition: background-color 0.15s ease;
         }}
         .stButton > button:hover, .stDownloadButton > button:hover {{
-            background-color: #6E5518;
+            background-color: {GOLD_HOVER};
             color: #FFFFFF;
         }}
 
@@ -315,7 +323,7 @@ def render_bar_chart(data, color=GOLD, height=320):
             ],
         )
         .properties(height=height)
-        .configure_axis(gridColor="#EEF1F5", domainColor=BORDER, tickColor=BORDER)
+        .configure_axis(gridColor="#EDE6D8", domainColor=BORDER, tickColor=BORDER)
         .configure_view(strokeWidth=0)
     )
     st.altair_chart(chart, width="stretch")
@@ -542,9 +550,9 @@ def generate_pdf():
     styles = getSampleStyleSheet()
     from reportlab.lib.styles import ParagraphStyle
 
-    BRAND_NAVY = colors.HexColor("#0B1F3A")
-    BRAND_GOLD = colors.HexColor("#8A6D1F")
-    BRAND_SOFT = colors.HexColor("#F4F6FA")
+    BRAND_NAVY = colors.HexColor("#0A1930")
+    BRAND_GOLD = colors.HexColor("#9B6526")
+    BRAND_SOFT = colors.HexColor("#F3EDE1")
 
     report_company = company_name_a or "Company A"
     detected_year_a = (st.session_state.get("a_meta") or {}).get("detected_year")
@@ -765,7 +773,7 @@ def generate_pdf():
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#D8DEE9")),
+        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
         ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
@@ -793,7 +801,7 @@ def generate_pdf():
     ratio_summary_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#D8DEE9")),
+        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
         ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
@@ -814,8 +822,8 @@ def generate_pdf():
     # ---------------- Charts ----------------
 
     money_formatter = FuncFormatter(lambda x, pos: f"£{x:,.0f}")
-    NAVY_HEX = "#0B1F3A"
-    GOLD_HEX = "#8A6D1F"
+    NAVY_HEX = "#0A1930"
+    GOLD_HEX = "#9B6526"
 
     plt.rcParams["font.family"] = "sans-serif"
 
@@ -823,7 +831,7 @@ def generate_pdf():
     ax1.bar(
         ["Revenue", "Gross Profit", "Net Profit"],
         [revenue, gross_profit, net_profit],
-        color=[NAVY_HEX, GOLD_HEX, "#5B7DA6"],
+        color=[NAVY_HEX, GOLD_HEX, "#8C7B5E"],
         width=0.55
     )
     ax1.set_title("Financial Performance", fontsize=13, fontweight="bold", color=NAVY_HEX)
@@ -831,7 +839,7 @@ def generate_pdf():
     ax1.yaxis.set_major_formatter(money_formatter)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
-    ax1.grid(axis="y", color="#E5E9F0", linewidth=0.8, zorder=0)
+    ax1.grid(axis="y", color="#E4DAC8", linewidth=0.8, zorder=0)
     ax1.set_axisbelow(True)
     fig1.tight_layout()
     fig1.savefig("chart.png", dpi=300)
@@ -858,7 +866,7 @@ def generate_pdf():
     ax2.yaxis.set_major_formatter(money_formatter)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
-    ax2.grid(axis="y", color="#E5E9F0", linewidth=0.8, zorder=0)
+    ax2.grid(axis="y", color="#E4DAC8", linewidth=0.8, zorder=0)
     ax2.set_axisbelow(True)
     fig2.tight_layout()
     fig2.savefig("chart2.png", dpi=300)
@@ -928,7 +936,7 @@ def generate_pdf():
         comparison_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#D8DEE9")),
+            ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
             ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
