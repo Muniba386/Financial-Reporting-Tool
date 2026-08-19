@@ -100,11 +100,14 @@ if "dark_mode" not in st.session_state:
     st.session_state["dark_mode"] = False
 DARK_MODE = st.session_state["dark_mode"]
 
-# Always this exact deep navy, regardless of mode — used only for surfaces
-# that stay a fixed colour either way: the monogram mark (always a dark
-# square) and insight-card text (the cards themselves stay white/light in
-# both modes, so their text must stay dark to remain readable on them).
+# Always these exact colours, regardless of mode — used only for surfaces
+# that stay fixed either way: the monogram mark (always a dark square with
+# this exact brass letter — it's a logo, not themed UI, so it shouldn't
+# shift shade when the rest of the app switches to dark mode) and
+# insight-card text (the cards themselves stay white/light in both modes,
+# so their text must stay dark to remain readable on them).
 BRAND_NAVY = "#0A1930"
+BRAND_GOLD = "#9B6526"
 
 if DARK_MODE:
     NAVY = "#F0E9DB"
@@ -299,7 +302,8 @@ def inject_custom_css():
             flex-wrap: nowrap !important;
             align-items: center !important;
             overflow-x: auto !important;
-            overflow-y: hidden !important;
+            overflow-y: visible !important;
+            padding-bottom: 4px !important;
             scrollbar-width: thin;
         }}
         .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
@@ -516,7 +520,7 @@ def render_topbar():
                               background:{BRAND_NAVY}; display:flex; align-items:center;
                               justify-content:center; flex-shrink:0;">
                     <span style="font-family:'Source Serif 4', Georgia, serif;
-                                 font-weight:700; font-size:1.05rem; color:{GOLD};">F</span>
+                                 font-weight:700; font-size:1.05rem; color:{BRAND_GOLD};">F</span>
                   </div>
                   <span class="topnav-wordmark" style="font-family:'Source Serif 4', Georgia, serif;
                                font-weight:700; font-size:1.12rem; color:{NAVY}; white-space:nowrap;">
