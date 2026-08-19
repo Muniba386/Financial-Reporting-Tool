@@ -6,4 +6,4 @@ textColor = "#0A1930"
 font = "sans serif"
 
 [client]
-toolbarMode = "minimal"
+toolbarMode = "viewer"
