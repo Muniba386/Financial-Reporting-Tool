@@ -3,18 +3,23 @@ Flexible financial data extraction.
 
 Takes an uploaded file in almost any common shape — Excel/CSV with rows and
 columns in a different order than expected, different account-name wording,
-a different year column, or a table extracted from a PDF — and tries to
-identify the 8 line items the app needs:
+a different year column, a table extracted from a PDF, or a full
+professional statement spread across several sheets/pages (a separate
+Income Statement and Balance Sheet, as real annual reports and Companies
+House filings almost always are) — and tries to identify the 15 line items
+the app understands:
 
-    revenue, cost_of_sales, gross_profit, net_profit,
-    current_assets, current_liabilities, total_debt, equity
+    revenue, cost_of_sales, gross_profit, operating_profit, net_profit,
+    interest_expense, inventory, accounts_receivable, cash, current_assets,
+    accounts_payable, current_liabilities, total_assets, total_debt, equity
 
 This is rule-based matching (name-synonym lookup + fuzzy string matching),
 not an AI model reading the document, so it won't be perfect on every
-possible layout. It's designed to get close on common formats and then let
-the user review and correct the detected values before anything is
-calculated — that review step is what makes it safe to rely on for
-arbitrary files, not the auto-detection alone.
+possible layout. It's designed to get close on common formats — including
+multi-sheet workbooks and multi-page PDFs — and then let the user review
+and correct the detected values before anything is calculated. That review
+step is what makes it safe to rely on for arbitrary files, not the
+auto-detection alone.
 """
 
 import re
@@ -29,7 +34,8 @@ METRIC_SYNONYMS = {
     ],
     "cost_of_sales": [
         "cost of sales", "cost of goods sold", "cogs", "cost of revenue",
-        "cost of sales and services"
+        "cost of sales and services", "total cost of revenue",
+        "total cost of sales"
     ],
     "gross_profit": [
         "gross profit", "gross income", "gross margin"
@@ -120,6 +126,13 @@ YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
 
 MATCH_THRESHOLD = 0.72
 
+# How many rows from the top of a sheet/CSV to scan when looking for the
+# real header row (see find_header_row). Professional statements commonly
+# have a company-name title, a statement-name subtitle, a date-range line
+# and a blank spacer row before the actual "FY2024 / FY2025 / FY2026E"
+# column headers — comfortably within this window.
+HEADER_SCAN_ROWS = 15
+
 
 def normalize_label(value):
     text = str(value).lower().strip()
@@ -139,18 +152,40 @@ def _label_score(norm_label, synonym):
     return difflib.SequenceMatcher(None, norm_label, syn_norm).ratio()
 
 
-def match_rows_to_metrics(row_labels, threshold=MATCH_THRESHOLD):
+def match_rows_to_metrics(row_labels, has_value, threshold=MATCH_THRESHOLD):
     """
     Score every (row, metric) pair and greedily assign each metric to its
     single best-scoring, not-yet-used row. Returns {metric: (row_index, score)}.
+
+    has_value: a list parallel to row_labels — True where that row actually
+    has a usable number in the column we're about to read from, False
+    otherwise. Rows without a value are excluded from candidacy entirely.
+    This matters because real statements are full of bare section headers
+    that read exactly like the metric we want ("Revenue", "Current Assets",
+    "Stockholders' Equity") sitting just above the actual total line
+    ("Total revenue", "Total current assets", "Total stockholders'
+    equity") — without this filter, a blank header can win the text-match
+    tie-break and then get permanently assigned to that metric with a
+    None value, silently blocking the real total line from ever being
+    matched at all.
     """
     candidates = []
     for idx, label in enumerate(row_labels):
+        if not has_value[idx]:
+            continue
         norm = normalize_label(label)
         if not norm:
             continue
         for metric, synonyms in METRIC_SYNONYMS.items():
             best_for_row_metric = max(_label_score(norm, syn) for syn in synonyms)
+            # Small tie-break nudge toward "Total X" lines over component
+            # sub-lines with similar wording (e.g. "Total revenue" over
+            # "Product revenue" / "Service revenue", "Total current
+            # assets" over a component like "Inventory") — a real
+            # statement's grand-total line is almost always what a ratio
+            # calculation wants, not one piece of it.
+            if norm.startswith("total "):
+                best_for_row_metric += 0.03
             if best_for_row_metric >= threshold:
                 candidates.append((best_for_row_metric, idx, metric))
 
@@ -180,8 +215,70 @@ def detect_year_columns(columns):
     return found
 
 
+def find_header_row(raw_rows, max_scan=HEADER_SCAN_ROWS):
+    """
+    raw_rows: a list of rows (no header assumed — row 0 is just whatever
+    the first row of the sheet/CSV happens to be) as returned by e.g.
+    pd.read_excel(..., header=None).values.tolist().
+
+    Real financial statements almost always have a company name, a
+    statement title, and a "For the year ended ..." line above the actual
+    column-header row — blindly treating row 0 as the header (pandas'
+    default) misreads all of that as data and leaves the real "FY2024 /
+    FY2025 / FY2026E" row buried as an ordinary line item, which is why
+    year-column detection was failing on well-formatted professional
+    statements. This scans the first few rows for the one with the most
+    year-like cells ("FY2024", "2024", "Dec-2024", "2024 (£)") — the
+    strongest, most common signal for a statement's real header row — and
+    returns its 0-based index. Falls back to 0 (pandas' own default) if no
+    row in the scan window has any year-like cell at all, so already-clean
+    files (e.g. a plain "Item, 2024" CSV) behave exactly as before.
+    """
+    best_idx, best_hits = 0, 0
+    for i, row in enumerate(raw_rows[:max_scan]):
+        hits = 0
+        for v in row:
+            if v is None:
+                continue
+            text = str(v).strip()
+            if not text or text.lower() == "nan":
+                continue
+            if YEAR_PATTERN.search(text):
+                hits += 1
+        if hits > best_hits:
+            best_hits = hits
+            best_idx = i
+    return best_idx
+
+
+def reframe_with_header(raw_df, header_row):
+    """Re-slice a header=None DataFrame so row `header_row` becomes the
+    column headers and everything after it becomes the data — the same
+    shape pd.read_excel(..., header=N) would produce, but computed after
+    the fact once find_header_row has located the real header row."""
+    header_values = raw_df.iloc[header_row].tolist()
+    df = raw_df.iloc[header_row + 1:].copy()
+    cleaned_cols = []
+    for i, c in enumerate(header_values):
+        if c is None or (isinstance(c, float) and pd.isna(c)) or str(c).strip() == "":
+            cleaned_cols.append(f"col{i}")
+        else:
+            cleaned_cols.append(c)
+    df.columns = cleaned_cols
+    return df.reset_index(drop=True)
+
+
 def _to_number(raw):
     if raw is None:
+        return None
+    # pandas represents a blank cell as float('nan'), not None — and
+    # nan IS an instance of float, so without this check a blank cell
+    # was silently treated as "the number nan" instead of "no value
+    # here", which let bare section-header rows (blank in every year
+    # column) pass the has_value filter in match_rows_to_metrics and
+    # win a metric with a NaN result instead of being correctly skipped
+    # in favour of the row with the real total.
+    if isinstance(raw, float) and pd.isna(raw):
         return None
     if isinstance(raw, (int, float)):
         return float(raw)
@@ -196,6 +293,76 @@ def _to_number(raw):
     except ValueError:
         return None
     return -value if negative else value
+
+
+def _finalize_meta(meta, values):
+    """Fill in meta["warning"] based on how many of the 8 CORE fields (not
+    all 15 — most real statements never report inventory, receivables/
+    payables, interest expense, or total assets at all) ended up matched.
+    Shared by the single-table path and the multi-sheet/multi-table merge
+    path so both apply the exact same warning threshold to the final,
+    combined set of values rather than to any one sheet/table in
+    isolation."""
+    core_metrics = [m for m in METRIC_SYNONYMS if m not in OPTIONAL_METRICS]
+    total_core = len(core_metrics)
+    matched_core_count = sum(1 for m in core_metrics if m in values)
+    warning = None
+    if matched_core_count == 0:
+        warning = (
+            "We couldn't recognize any of the expected financial line items "
+            "(Revenue, Net Profit, Current Assets, etc.) in this file. All "
+            "figures have been left at 0 — please enter them manually below."
+        )
+    elif matched_core_count <= 3:
+        warning = (
+            f"Only {matched_core_count} of {total_core} core line items were "
+            f"recognized in this file. Please check the figures below and fill "
+            f"in anything that's missing."
+        )
+    meta["warning"] = warning
+    return meta
+
+
+def _merge_extractions(results):
+    """results: [(source_label, (values, meta)), ...] — one entry per
+    sheet (Excel) or table (PDF). Merges them into one combined result
+    rather than picking a single "best" source, because a real statement
+    routinely spreads Income Statement and Balance Sheet line items across
+    separate sheets/pages that don't overlap — picking only the
+    single highest-scoring source would silently discard everything the
+    other one found. Where the same metric is matched in more than one
+    source, the higher-confidence match wins."""
+    combined_values = {}
+    combined_match_info = {}
+    sources_used = []
+    label_col_display = value_col_display = detected_year = None
+    available_years = []
+
+    for label, (values, meta) in results:
+        if not values:
+            continue
+        sources_used.append(label)
+        if label_col_display is None:
+            label_col_display = meta.get("label_column")
+            value_col_display = meta.get("value_column")
+            detected_year = meta.get("detected_year")
+            available_years = meta.get("available_years", [])
+        for metric, val in values.items():
+            new_conf = meta.get("match_info", {}).get(metric, {}).get("confidence", 0)
+            existing_conf = combined_match_info.get(metric, {}).get("confidence", -1)
+            if metric not in combined_values or new_conf > existing_conf:
+                combined_values[metric] = val
+                combined_match_info[metric] = meta["match_info"][metric]
+
+    meta = {
+        "label_column": label_col_display,
+        "value_column": value_col_display,
+        "detected_year": detected_year,
+        "available_years": available_years,
+        "match_info": combined_match_info,
+        "sources_combined": sources_used,
+    }
+    return combined_values, meta
 
 
 def extract_from_dataframe(df, preferred_year=None):
@@ -253,7 +420,8 @@ def extract_from_dataframe(df, preferred_year=None):
     if chosen_col is None:
         return None, {"error": "Couldn't find a column of figures to read values from."}
 
-    assigned = match_rows_to_metrics(row_labels)
+    has_value = [_to_number(df.iloc[i][chosen_col]) is not None for i in range(len(row_labels))]
+    assigned = match_rows_to_metrics(row_labels, has_value)
 
     values = {}
     match_info = {}
@@ -263,7 +431,12 @@ def extract_from_dataframe(df, preferred_year=None):
             values[metric] = num_val
             match_info[metric] = {
                 "matched_label": row_labels[row_idx],
-                "confidence": round(score, 2),
+                # The "total "-prefix tie-break in match_rows_to_metrics can
+                # push a score slightly past 1.0 (e.g. an exact match that
+                # also gets the bonus) — fine for internal ranking, but
+                # "103% confidence" reads oddly in the review UI, so it's
+                # capped here purely for display.
+                "confidence": round(min(score, 1.0), 2),
             }
 
     if "gross_profit" not in values and "revenue" in values and "cost_of_sales" in values:
@@ -273,43 +446,63 @@ def extract_from_dataframe(df, preferred_year=None):
             "confidence": 1.0,
         }
 
-    # A structurally valid file (we found a label column and a value
-    # column) can still fail to match anything useful — e.g. a file that
+    # A structurally valid table (we found a label column and a value
+    # column) can still fail to match anything useful — e.g. a table that
     # simply isn't a financial statement. Rather than silently showing a
     # dashboard full of confident-looking zeroes, flag it so the app can
     # surface a clear warning instead of a false sense that it worked.
-    #
-    # The threshold is based on the 8 CORE fields only, not all 15 — most
-    # real financial statements never report things like inventory,
-    # receivables/payables, or interest expense at all, so a perfectly
-    # good file that matches all 8 core fields but none of the 7 optional
-    # ones shouldn't trigger a "couldn't read this file" warning.
-    core_metrics = [m for m in METRIC_SYNONYMS if m not in OPTIONAL_METRICS]
-    total_core = len(core_metrics)
-    matched_core_count = sum(1 for m in core_metrics if m in values)
-    warning = None
-    if matched_core_count == 0:
-        warning = (
-            "We couldn't recognize any of the expected financial line items "
-            "(Revenue, Net Profit, Current Assets, etc.) in this file. All "
-            "figures have been left at 0 — please enter them manually below."
-        )
-    elif matched_core_count <= 3:
-        warning = (
-            f"Only {matched_core_count} of {total_core} core line items were "
-            f"recognized in this file. Please check the figures below and fill "
-            f"in anything that's missing."
-        )
-
     meta = {
         "label_column": str(label_col),
         "value_column": str(chosen_col),
         "detected_year": detected_year,
         "available_years": [y for _, y in year_cols],
         "match_info": match_info,
-        "warning": warning,
     }
+    _finalize_meta(meta, values)
     return values, meta
+
+
+def extract_from_excel(source):
+    """Reads every sheet in the workbook (not just the first), auto-
+    detecting each sheet's real header row independently, and merges
+    whatever each sheet matches into one combined result — the layout a
+    professional statement almost always uses is a separate Income
+    Statement sheet and Balance Sheet sheet, each with its own header row
+    position and its own set of year columns, neither of which is a
+    complete statement on its own."""
+    try:
+        all_raw = pd.read_excel(source, sheet_name=None, header=None)
+    except Exception as e:
+        return None, {"error": f"Couldn't read this Excel file: {e}"}
+
+    results = []
+    preferred_year = None
+    for sheet_name, raw_df in all_raw.items():
+        if raw_df is None or raw_df.shape[0] == 0:
+            continue
+        header_row = find_header_row(raw_df.values.tolist())
+        df = reframe_with_header(raw_df, header_row)
+        values, meta = extract_from_dataframe(df, preferred_year=preferred_year)
+        if values and preferred_year is None and meta.get("detected_year"):
+            # Bias every subsequent sheet toward the same fiscal year the
+            # first successfully-matched sheet used, so a workbook whose
+            # sheets don't all offer identical year columns (e.g. the P&L
+            # covers 3 years but the balance sheet only 2) still reads
+            # consistently from the same year wherever that year exists.
+            preferred_year = meta["detected_year"]
+        results.append((sheet_name, (values, meta)))
+
+    combined_values, combined_meta = _merge_extractions(results)
+    if not combined_values:
+        return None, {
+            "error": (
+                "Couldn't recognize any financial line items in this "
+                "workbook (checked every sheet). Please use the review "
+                "fields below to enter the figures manually."
+            )
+        }
+    _finalize_meta(combined_meta, combined_values)
+    return combined_values, combined_meta
 
 
 def extract_from_pdf(file_obj):
@@ -318,10 +511,10 @@ def extract_from_pdf(file_obj):
     tables_found = []
     try:
         with pdfplumber.open(file_obj) as pdf:
-            for page in pdf.pages:
-                for table in (page.extract_tables() or []):
+            for page_num, page in enumerate(pdf.pages, start=1):
+                for t_idx, table in enumerate(page.extract_tables() or []):
                     if table and len(table) > 1:
-                        tables_found.append(table)
+                        tables_found.append((f"page {page_num}", table))
     except Exception as e:
         return None, {"error": f"Couldn't open this PDF: {e}"}
 
@@ -334,19 +527,27 @@ def extract_from_pdf(file_obj):
             )
         }
 
-    best_values, best_meta, best_count = None, None, -1
-    for table in tables_found:
+    # Merged across every table found (not just the single best-matching
+    # one) — a multi-page professional statement typically has the Income
+    # Statement and Balance Sheet as separate tables on separate pages,
+    # each contributing different line items rather than one page being a
+    # strictly "better" read of the whole document.
+    results = []
+    preferred_year = None
+    for label, table in tables_found:
         header, *rows = table
         try:
             columns = [h if h not in (None, "") else f"col{i}" for i, h in enumerate(header)]
             df = pd.DataFrame(rows, columns=columns)
         except Exception:
             continue
-        values, meta = extract_from_dataframe(df)
-        if values and len(values) > best_count:
-            best_values, best_meta, best_count = values, meta, len(values)
+        values, meta = extract_from_dataframe(df, preferred_year=preferred_year)
+        if values and preferred_year is None and meta.get("detected_year"):
+            preferred_year = meta["detected_year"]
+        results.append((label, (values, meta)))
 
-    if best_values is None:
+    combined_values, combined_meta = _merge_extractions(results)
+    if not combined_values:
         return None, {
             "error": (
                 "Found tables in this PDF but couldn't identify financial "
@@ -354,8 +555,8 @@ def extract_from_pdf(file_obj):
                 "enter the figures manually."
             )
         }
-
-    return best_values, best_meta
+    _finalize_meta(combined_meta, combined_values)
+    return combined_values, combined_meta
 
 
 def extract_financial_data(source, filename=None):
@@ -373,11 +574,12 @@ def extract_financial_data(source, filename=None):
         if ext == "pdf":
             return extract_from_pdf(source)
         elif ext == "csv":
-            df = pd.read_csv(source, header=0)
+            raw = pd.read_csv(source, header=None)
+            header_row = find_header_row(raw.values.tolist())
+            df = reframe_with_header(raw, header_row)
             return extract_from_dataframe(df)
         elif ext in ("xlsx", "xls"):
-            df = pd.read_excel(source)
-            return extract_from_dataframe(df)
+            return extract_from_excel(source)
         else:
             return None, {"error": f"Unsupported file type: .{ext or '?'}. Please upload a .xlsx, .csv, or .pdf file."}
     except Exception as e:
