@@ -51,7 +51,9 @@ from analysis import (
     debt_analysis,
     gross_margin_analysis,
     roe_analysis,
-    efficiency_analysis
+    efficiency_analysis,
+    interpret_ratio,
+    ratio_direction,
 )
 
 
@@ -183,12 +185,15 @@ def styled_note(text, tone):
 
 
 def render_insight(result):
-    """result is a (message, severity) tuple from analysis.py. The card's
-    accent colour always matches what the message says — a ratio that
-    couldn't be calculated is a neutral note, not a green success card,
-    and a genuinely weak ratio is a deep-red flag, not a cheerful one."""
-    text, severity = result
-    styled_note(text, severity)
+    """result is a (headline, detail, severity) tuple from analysis.py. The
+    card's accent colour always matches what the message says — a ratio
+    that couldn't be calculated is a neutral note, not a green success
+    card, and a genuinely weak ratio is a deep-red flag, not a cheerful
+    one. The headline is bolded, the detail sentence (the actual £/%
+    figure and its hedged interpretation) sits underneath it — this is
+    the "don't just show 13%, explain what 13% means" card."""
+    headline, detail, severity = result
+    styled_note(f"<b>{headline}.</b> {detail}", severity)
 
 
 def money_fmt(x):
@@ -439,16 +444,33 @@ def inject_custom_css():
             background: {PANEL};
             border: 1px solid {BORDER};
             color: {NAVY} !important;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             font-weight: 600;
-            padding: 0.55rem 1.1rem;
-            border-radius: 20px;
+            padding: 0.65rem 1.3rem;
+            border-radius: 22px;
             text-decoration: none !important;
-            transition: border-color 0.15s ease, color 0.15s ease;
+            transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+            box-shadow: 0 1px 2px rgba(10,25,48,0.06);
         }}
         .about-contact-link:hover {{
             border-color: {GOLD};
             color: {GOLD} !important;
+            box-shadow: 0 2px 6px rgba(10,25,48,0.1);
+        }}
+        /* The LinkedIn link is the one a recruiter/hiring manager is most
+           likely to click, so it gets the same filled brass treatment as
+           the app's primary buttons rather than the quiet outlined pill —
+           makes it read as the featured contact route, not an afterthought
+           next to the email address. */
+        .about-contact-link--primary {{
+            background: {GOLD} !important;
+            border-color: {GOLD} !important;
+            color: #FFFFFF !important;
+        }}
+        .about-contact-link--primary:hover {{
+            background: {GOLD_HOVER} !important;
+            border-color: {GOLD_HOVER} !important;
+            color: #FFFFFF !important;
         }}
 
         /* ---- Light/dark toggle — a small, quiet icon button, deliberately
@@ -569,6 +591,22 @@ def inject_custom_css():
         .st-key-tile_leverage div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Leverage']} !important; }}
         .st-key-tile_returns div[data-testid="stVerticalBlockBorderWrapper"] {{ border-top: 3px solid {CATEGORY_COLORS['Returns']} !important; }}
 
+        /* KPI headline cards (top of Ratio Analysis) get more presence than
+           an ordinary bordered container — bigger number, more breathing
+           room — so the page leads with "here's the story" rather than
+           easing into it via a dense table first. */
+        [class*="st-key-tile_"] div[data-testid="stVerticalBlockBorderWrapper"] {{
+            padding: 0.35rem 0.15rem 0.55rem 0.15rem !important;
+        }}
+        [class*="st-key-tile_"] [data-testid="stMetricValue"] {{
+            font-size: 2.05rem !important;
+            font-family: 'Source Serif 4', Georgia, serif;
+            line-height: 1.15;
+        }}
+        [class*="st-key-tile_"] [data-testid="stMetricLabel"] {{
+            font-size: 0.82rem !important;
+        }}
+
 
         /* ---- Dataframes ---- */
         [data-testid="stDataFrame"] {{
@@ -595,7 +633,7 @@ def inject_custom_css():
     )
 
 
-NAV_PAGES = ["Home", "Ratio Analysis", "Company Comparison", "Financial Report", "About"]
+NAV_PAGES = ["Home", "Ratio Analysis", "Company Comparison", "Financial Report", "Methodology", "About"]
 
 
 def render_topbar():
@@ -605,7 +643,7 @@ def render_topbar():
     CSS above), so the toggle can live right in the nav flow instead of
     needing to be pinned separately."""
     with st.container(key="topnav"):
-        cols = st.columns([2.2, 1, 1, 1, 1, 1, 0.45])
+        cols = st.columns([2.2, 1, 1, 1, 1, 1, 1, 0.45])
         with cols[0]:
             st.markdown(
                 f"""
@@ -625,7 +663,7 @@ def render_topbar():
                 """,
                 unsafe_allow_html=True,
             )
-        for col, name in zip(cols[1:6], NAV_PAGES):
+        for col, name in zip(cols[1:7], NAV_PAGES):
             with col:
                 is_active = st.session_state.get("active_page", "Home") == name
                 if st.button(
@@ -635,7 +673,7 @@ def render_topbar():
                 ):
                     st.session_state["active_page"] = name
                     st.rerun()
-        with cols[6]:
+        with cols[7]:
             # A small, self-built light/dark toggle — Streamlit's own theme
             # switcher is unavailable whenever a custom [theme] is set in
             # config.toml, so this reads and flips its own session_state
@@ -798,11 +836,17 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
         st.session_state[f"{prefix}_values"] = {
             metric: float((values or {}).get(metric, 0.0)) for metric in METRICS
         }
+        # Multi-year figures (revenue in 2024/2025/2026, etc.) for the
+        # trend-analysis view — additive to the single-year `_values` above,
+        # which every other page still reads exactly as before.
+        st.session_state[f"{prefix}_trend"] = (meta or {}).get("values_by_year", {})
         st.session_state[f"{prefix}_default_company_name"] = guessed_name
         st.session_state[f"{prefix}_company_name"] = guessed_name
 
     if f"{prefix}_values" not in st.session_state:
         st.session_state[f"{prefix}_values"] = {metric: 0.0 for metric in METRICS}
+    if f"{prefix}_trend" not in st.session_state:
+        st.session_state[f"{prefix}_trend"] = {}
     if f"{prefix}_company_name" not in st.session_state:
         st.session_state[f"{prefix}_company_name"] = label
 
@@ -820,56 +864,89 @@ def compute_ratio_set(v):
     and PDF report all show exactly the same numbers rather than three
     separate re-implementations drifting apart. v is a dict shaped like
     company_values(prefix) — one of the 15 raw line items per key.
-    Returns a list of (category, label, formatted_value) tuples."""
+    Returns a list of (category, label, formatted_value, metric_key,
+    raw_value) tuples — metric_key/raw_value feed interpret_ratio() for the
+    per-row interpretation badge; existing callers that only used the first
+    three elements are unaffected since tuple order is unchanged."""
     money = money_fmt
+
+    def row(category, label, metric_key, raw_value, **fmt_kwargs):
+        return (category, label, format_ratio(raw_value, **fmt_kwargs), metric_key, raw_value)
+
+    wc = working_capital(v["current_assets"], v["current_liabilities"])
     return [
-        ("Liquidity", "Current Ratio",
-         format_ratio(current_ratio(v["current_assets"], v["current_liabilities"]))),
-        ("Liquidity", "Quick Ratio (Acid-Test)",
-         format_ratio(quick_ratio(v["current_assets"], v["inventory"], v["current_liabilities"]))),
-        ("Liquidity", "Cash Ratio",
-         format_ratio(cash_ratio(v["cash"], v["current_liabilities"]))),
-        ("Liquidity", "Working Capital",
-         money(working_capital(v["current_assets"], v["current_liabilities"]))),
+        row("Liquidity", "Current Ratio", "current_ratio",
+            current_ratio(v["current_assets"], v["current_liabilities"])),
+        row("Liquidity", "Quick Ratio (Acid-Test)", "quick_ratio",
+            quick_ratio(v["current_assets"], v["inventory"], v["current_liabilities"])),
+        row("Liquidity", "Cash Ratio", "cash_ratio",
+            cash_ratio(v["cash"], v["current_liabilities"])),
+        ("Liquidity", "Working Capital", money(wc), "working_capital", wc),
 
-        ("Profitability", "Gross Profit Margin",
-         format_ratio(gross_profit_margin(v["gross_profit"], v["revenue"]), suffix="%")),
-        ("Profitability", "Operating Profit Margin",
-         format_ratio(operating_profit_margin(v["operating_profit"], v["revenue"]), suffix="%")),
-        ("Profitability", "Net Profit Margin",
-         format_ratio(net_profit_margin(v["net_profit"], v["revenue"]), suffix="%")),
+        row("Profitability", "Gross Profit Margin", "gross_profit_margin",
+            gross_profit_margin(v["gross_profit"], v["revenue"]), suffix="%"),
+        row("Profitability", "Operating Profit Margin", "operating_profit_margin",
+            operating_profit_margin(v["operating_profit"], v["revenue"]), suffix="%"),
+        row("Profitability", "Net Profit Margin", "net_profit_margin",
+            net_profit_margin(v["net_profit"], v["revenue"]), suffix="%"),
 
-        ("Efficiency", "Debtor (Receivables) Turnover",
-         format_ratio(debtor_turnover(v["revenue"], v["accounts_receivable"]), suffix="x")),
-        ("Efficiency", "Debtor Days",
-         format_ratio(debtor_days(v["revenue"], v["accounts_receivable"]), decimals=1, suffix=" days")),
-        ("Efficiency", "Inventory Turnover",
-         format_ratio(inventory_turnover(v["cost_of_sales"], v["inventory"]), suffix="x")),
-        ("Efficiency", "Inventory Days",
-         format_ratio(inventory_days(v["cost_of_sales"], v["inventory"]), decimals=1, suffix=" days")),
-        ("Efficiency", "Creditor (Payables) Turnover",
-         format_ratio(creditor_turnover(v["cost_of_sales"], v["accounts_payable"]), suffix="x")),
-        ("Efficiency", "Creditor Days",
-         format_ratio(creditor_days(v["cost_of_sales"], v["accounts_payable"]), decimals=1, suffix=" days")),
-        ("Efficiency", "Asset Turnover",
-         format_ratio(asset_turnover(v["revenue"], v["total_assets"]), suffix="x")),
+        row("Efficiency", "Debtor (Receivables) Turnover", "debtor_turnover",
+            debtor_turnover(v["revenue"], v["accounts_receivable"]), suffix="x"),
+        row("Efficiency", "Debtor Days", "debtor_days",
+            debtor_days(v["revenue"], v["accounts_receivable"]), decimals=1, suffix=" days"),
+        row("Efficiency", "Inventory Turnover", "inventory_turnover",
+            inventory_turnover(v["cost_of_sales"], v["inventory"]), suffix="x"),
+        row("Efficiency", "Inventory Days", "inventory_days",
+            inventory_days(v["cost_of_sales"], v["inventory"]), decimals=1, suffix=" days"),
+        row("Efficiency", "Creditor (Payables) Turnover", "creditor_turnover",
+            creditor_turnover(v["cost_of_sales"], v["accounts_payable"]), suffix="x"),
+        row("Efficiency", "Creditor Days", "creditor_days",
+            creditor_days(v["cost_of_sales"], v["accounts_payable"]), decimals=1, suffix=" days"),
+        row("Efficiency", "Asset Turnover", "asset_turnover",
+            asset_turnover(v["revenue"], v["total_assets"]), suffix="x"),
 
-        ("Leverage", "Debt to Equity",
-         format_ratio(debt_to_equity(v["total_debt"], v["equity"]))),
-        ("Leverage", "Debt Ratio",
-         format_ratio(debt_ratio(v["total_debt"], v["total_assets"]))),
-        ("Leverage", "Equity Ratio",
-         format_ratio(equity_ratio(v["equity"], v["total_assets"]))),
-        ("Leverage", "Interest Coverage Ratio",
-         format_ratio(interest_coverage_ratio(v["operating_profit"], v["interest_expense"]), suffix="x")),
+        row("Leverage", "Debt to Equity", "debt_to_equity",
+            debt_to_equity(v["total_debt"], v["equity"])),
+        row("Leverage", "Debt Ratio", "debt_ratio",
+            debt_ratio(v["total_debt"], v["total_assets"])),
+        row("Leverage", "Equity Ratio", "equity_ratio",
+            equity_ratio(v["equity"], v["total_assets"])),
+        row("Leverage", "Interest Coverage Ratio", "interest_coverage_ratio",
+            interest_coverage_ratio(v["operating_profit"], v["interest_expense"]), suffix="x"),
 
-        ("Returns", "Return on Equity",
-         format_ratio(return_on_equity(v["net_profit"], v["equity"]), suffix="%")),
-        ("Returns", "Return on Assets",
-         format_ratio(return_on_assets(v["net_profit"], v["total_assets"]), suffix="%")),
-        ("Returns", "Return on Capital Employed",
-         format_ratio(return_on_capital_employed(v["operating_profit"], v["total_assets"], v["current_liabilities"]), suffix="%")),
+        row("Returns", "Return on Equity", "return_on_equity",
+            return_on_equity(v["net_profit"], v["equity"]), suffix="%"),
+        row("Returns", "Return on Assets", "return_on_assets",
+            return_on_assets(v["net_profit"], v["total_assets"]), suffix="%"),
+        row("Returns", "Return on Capital Employed", "return_on_capital_employed",
+            return_on_capital_employed(v["operating_profit"], v["total_assets"], v["current_liabilities"]), suffix="%"),
     ]
+
+
+def trend_years(prefix):
+    """Every year the extraction found a figure for, across any metric —
+    sorted ascending. Fewer than 2 means there's nothing to trend."""
+    trend = st.session_state.get(f"{prefix}_trend", {})
+    years = sorted({yr for series in trend.values() for yr in series.keys()})
+    return years
+
+
+def build_year_ratio_table(prefix):
+    """Recomputes the full ratio set for each year the extraction found
+    historical figures for (2024, 2025, 2026, ...), by feeding each year's
+    slice of values_by_year through the exact same compute_ratio_set() used
+    everywhere else — no separate ratio math to keep in sync. Returns
+    (years, {metric_key: {"category":, "label":, "by_year": {year: (fmt, raw)}}}).
+    """
+    trend = st.session_state.get(f"{prefix}_trend", {})
+    years = trend_years(prefix)
+    per_metric = {}
+    for yr in years:
+        v_year = {m: trend.get(m, {}).get(yr, 0.0) for m in METRICS}
+        for cat, label, fmt_val, mkey, raw in compute_ratio_set(v_year):
+            entry = per_metric.setdefault(mkey, {"category": cat, "label": label, "by_year": {}})
+            entry["by_year"][yr] = (fmt_val, raw)
+    return years, per_metric
 
 
 def is_sample_data(prefix):
@@ -919,6 +996,105 @@ def render_company_name_field(prefix):
     st.caption("Auto-filled from the uploaded file's name — edit if you'd like it to read differently.")
 
 
+def render_data_quality_summary(prefix):
+    """A consolidated "Data Quality Check" scorecard, sitting above the
+    per-field review below: how many of the 15 figures were detected
+    automatically, and a compact checklist of exactly which ones weren't —
+    so a reviewer (or the person uploading) can see how much to trust the
+    auto-detection at a glance, rather than scrolling through every field's
+    individual caption to find out."""
+    meta = st.session_state.get(f"{prefix}_meta", {})
+    match_info = meta.get("match_info", {})
+
+    core_metrics = [m for m in METRICS if m not in OPTIONAL_METRICS]
+    optional_metrics = [m for m in METRICS if m in OPTIONAL_METRICS]
+    core_detected = [m for m in core_metrics if m in match_info]
+    core_missing = [m for m in core_metrics if m not in match_info]
+    optional_detected = [m for m in optional_metrics if m in match_info]
+
+    total_detected = len(core_detected) + len(optional_detected)
+    tone = "good" if len(core_missing) == 0 else ("medium" if len(core_detected) > len(core_missing) else "bad")
+    tone_icon = {"good": "✅", "medium": "⚠️", "bad": "⚠️"}[tone]
+
+    with st.expander(
+        f"{tone_icon} Data Quality Check — {total_detected}/{len(METRICS)} figures detected automatically "
+        f"({len(core_detected)}/{len(core_metrics)} core)",
+        expanded=False,
+    ):
+        st.caption(
+            "\"Core\" fields feed every ratio on the Ratio Analysis page; \"optional\" "
+            "fields aren't reported by every statement, so a missing one here doesn't "
+            "necessarily mean anything was misread."
+        )
+        rows = []
+        for m in core_metrics + optional_metrics:
+            label = METRIC_LABELS[m] + (" (optional)" if m in OPTIONAL_METRICS else "")
+            info = match_info.get(m)
+            if info:
+                status = f"✓ Detected — matched \"{info['matched_label']}\" ({info['confidence']*100:.0f}% confidence)"
+            elif m in OPTIONAL_METRICS:
+                status = "— Not detected (optional; leave as 0 if not applicable)"
+            else:
+                status = "⚠ Not detected — please confirm manually below"
+            rows.append((label, status))
+        st.dataframe(
+            pd.DataFrame(rows, columns=["Line item", "Status"]),
+            hide_index=True,
+            width="stretch",
+        )
+
+
+def validate_company_data(v, company_name):
+    """Sanity-checks the figures currently in the review fields (not the
+    file-reading step — a file that fails to parse is already handled
+    separately via `_extract_error`) and returns a list of plain-English
+    warnings for anything logically implausible. Division-by-zero is
+    already handled everywhere in ratios.py (returns None -> displayed as
+    "N/A", never a crash) — this is a second layer on top of that, for
+    values that compute without error but still don't make accounting
+    sense, so the person reviewing the figures gets a friendly heads-up
+    rather than a plausible-looking but misleading ratio."""
+    warnings = []
+
+    if v["revenue"] < 0:
+        warnings.append(
+            f"Revenue is negative ({money_fmt(v['revenue'])}) — that's unusual "
+            f"outside of a specific accounting adjustment. Please double-check "
+            f"this figure."
+        )
+    if v["current_assets"] < 0 or v["current_liabilities"] < 0:
+        warnings.append(
+            "Current Assets or Current Liabilities is negative, which isn't "
+            "meaningful on a balance sheet — please check these figures."
+        )
+    if v["total_assets"] < 0:
+        warnings.append(
+            "Total Assets is negative, which isn't meaningful on a balance "
+            "sheet — please check this figure."
+        )
+    if v["equity"] < 0:
+        warnings.append(
+            f"Equity is negative ({money_fmt(v['equity'])}) — this can genuinely "
+            f"happen (e.g. accumulated losses), but leverage ratios like Debt to "
+            f"Equity can look misleadingly small or flip sign when equity is "
+            f"negative. Worth reading those with extra care for this company."
+        )
+    if v["revenue"] == 0 and (v["cost_of_sales"] != 0 or v["net_profit"] != 0 or v["gross_profit"] != 0):
+        warnings.append(
+            "Revenue is 0 while Cost of Sales, Gross Profit or Net Profit are "
+            "not — margin ratios (Gross/Operating/Net Profit Margin) will show "
+            "as N/A as a result. If Revenue wasn't detected from the upload, "
+            "enter it manually above."
+        )
+    if v["total_assets"] > 0 and v["current_liabilities"] > v["total_assets"]:
+        warnings.append(
+            "Current Liabilities exceed Total Assets, which would be unusual "
+            "for a going concern — worth double-checking both figures."
+        )
+
+    return [f"{company_name}: {w}" for w in warnings]
+
+
 def render_data_review(prefix, title):
     render_company_name_field(prefix)
 
@@ -934,6 +1110,8 @@ def render_data_review(prefix, title):
         if other_years:
             years_note += f" (also found: {other_years} — edit figures below if you'd rather use a different year)"
         st.caption(f"Source column: **{meta.get('value_column', '?')}**{years_note}")
+
+    render_data_quality_summary(prefix)
 
     values = st.session_state[f"{prefix}_values"]
     # Widget keys include the current file identity so that uploading a new
@@ -972,6 +1150,18 @@ def render_data_review(prefix, title):
                     st.caption("Not detected — not all statements report this; leave as 0 if not applicable")
                 else:
                     st.caption("Not detected — enter manually")
+
+    data_warnings = validate_company_data(values, title)
+    if data_warnings:
+        st.markdown(
+            f"<div style='color:{MUTED}; font-size:0.78rem; font-weight:700; "
+            f"text-transform:uppercase; letter-spacing:0.07em; margin:1.1rem 0 0.4rem 0;'>"
+            f"Data Validation</div>",
+            unsafe_allow_html=True,
+        )
+        for w in data_warnings:
+            styled_note(w, "warning")
+
     st.session_state[f"{prefix}_values"] = values
 
 
@@ -987,11 +1177,8 @@ uploaded_file_b = st.sidebar.file_uploader(
 )
 
 st.sidebar.caption(
-    "Works with almost any financial statement — Excel, CSV, or a "
-    "text-based PDF. Row order and exact account names don't need to "
-    "match; figures are auto-detected and shown for review on the Home "
-    "page before anything is calculated, so you can fix anything that "
-    "wasn't picked up correctly."
+    "Row order and exact wording don't need to match — figures are "
+    "auto-detected and shown for review before anything is calculated."
 )
 
 st.sidebar.markdown(
@@ -1083,11 +1270,11 @@ def generate_pdf():
     np_margin = net_profit_margin(net_profit, revenue)
     inv_turnover = inventory_turnover(cost_of_sales, inventory)
 
-    liquidity_msg, liquidity_sev = liquidity_analysis(curr_ratio)
-    debt_msg, debt_sev = debt_analysis(de_ratio)
-    profitability_msg, profitability_sev = profitability_analysis(np_margin)
-    roe_msg, roe_sev = roe_analysis(roe)
-    gross_margin_msg, gross_margin_sev = gross_margin_analysis(gp_margin)
+    liquidity_msg, liquidity_detail, liquidity_sev = liquidity_analysis(curr_ratio)
+    debt_msg, debt_detail, debt_sev = debt_analysis(de_ratio)
+    profitability_msg, profitability_detail, profitability_sev = profitability_analysis(np_margin)
+    roe_msg, roe_detail, roe_sev = roe_analysis(roe)
+    gross_margin_msg, gross_margin_detail, gross_margin_sev = gross_margin_analysis(gp_margin)
 
     net_profit_word = "net profit" if net_profit >= 0 else "net loss"
     net_profit_verb = "achieved" if net_profit >= 0 else "recorded"
@@ -1211,63 +1398,95 @@ def generate_pdf():
 
     story.append(
         Paragraph(
-            "<b>Recommendations</b>",
+            "<b>Financial Observations</b>",
             styles["Heading1"]
         )
     )
+    story.append(
+        Paragraph(
+            "<i>These are observations based on the ratios calculated below, not "
+            "recommendations — a ratio in isolation doesn't establish whether a "
+            "company is performing well without also knowing its industry, "
+            "strategy and stage of growth. They're best read alongside sector "
+            "norms and the company's own trend over time.</i>",
+            ParagraphStyle("ObsNote", parent=styles["Normal"], fontSize=8.5, textColor=colors.HexColor("#6E6759")),
+        )
+    )
+    story.append(Spacer(1, 8))
 
     # Built from the company's actual severities rather than a fixed list —
-    # a company already doing well on a measure gets a "maintain" note, not
-    # the same generic "improve" instruction as one that's genuinely weak
-    # on it, and a company that's simply missing the data gets told so.
+    # a company already doing well on a measure gets different wording from
+    # one that's more stretched on it, and a company that's simply missing
+    # the data gets told so. Phrased as observations ("current liabilities
+    # exceed current assets") rather than instructions ("you should..."),
+    # since prescribing action without knowing the company's context would
+    # overstate what a ratio calculation alone can tell you.
     recommendations = []
     if liquidity_sev in ("bad", "medium"):
         recommendations.append(
-            "Improve short-term liquidity — current liabilities are close to "
-            "or exceeding current assets, which is worth addressing to reduce "
-            "the risk of struggling to meet short-term obligations."
+            "Current liabilities are close to or exceeding current assets, which "
+            "can indicate short-term cash-flow pressure — worth reviewing "
+            "alongside the trend over recent periods and typical levels for the "
+            "sector."
             if liquidity_sev == "bad" else
-            "Continue building the liquidity buffer — the current ratio is "
-            "adequate but has limited headroom above 1."
+            "The current ratio is adequate but has limited headroom above 1, "
+            "leaving relatively little buffer if short-term obligations rise."
         )
     elif liquidity_sev == "good":
-        recommendations.append("Maintain the current strong liquidity position.")
+        recommendations.append(
+            "The current ratio suggests a comfortable short-term liquidity "
+            "position, consistent with the figures reviewed."
+        )
 
     if profitability_sev in ("bad", "medium"):
         recommendations.append(
-            "Improve profitability by increasing operating efficiency and "
-            "reviewing cost control, as net profit margin is currently low."
+            "Net profit margin is comparatively low relative to typical "
+            "benchmarks, which may reflect cost structure, pricing, or the "
+            "nature of the sector — worth comparing against industry peers "
+            "rather than in isolation."
             if profitability_sev == "bad" else
-            "Look for further efficiency gains to build on the current, "
-            "moderate profit margin."
+            "Net profit margin is moderate; whether there's room for further "
+            "efficiency gains would depend on how it compares with sector peers."
         )
     elif profitability_sev == "good":
-        recommendations.append("Continue the strong profitability trend.")
+        recommendations.append(
+            "Net profit margin is strong relative to typical benchmarks, "
+            "though sustaining it will depend on factors outside these figures."
+        )
 
     if debt_sev in ("bad", "medium"):
         recommendations.append(
-            "Reduce dependence on debt financing and consider a plan to bring "
-            "leverage down, as debt is currently high relative to equity."
+            "Debt is elevated relative to equity, which increases financial "
+            "risk if profits or interest rates move unfavourably — though "
+            "capital-intensive sectors often carry materially higher gearing "
+            "as standard practice."
             if debt_sev == "bad" else
-            "Monitor debt levels to avoid excessive financial leverage as the "
-            "business grows."
+            "Leverage is moderate; worth monitoring as the business grows, "
+            "particularly against sector norms."
         )
     elif debt_sev == "good":
-        recommendations.append("Maintain the current, conservative level of financial leverage.")
+        recommendations.append(
+            "Leverage is conservative relative to equity, generally "
+            "associated with lower financial risk."
+        )
 
     if roe_sev in ("bad", "medium"):
         recommendations.append(
-            "Focus on improving shareholder returns, which are currently weak "
-            "relative to the equity invested."
+            "Return on equity is below typical benchmarks, which may reflect "
+            "the business's stage, sector, or current performance — best read "
+            "alongside profitability and leverage together rather than alone."
             if roe_sev == "bad" else
-            "Continue improving shareholder returns through sustainable growth strategies."
+            "Return on equity is moderate relative to typical benchmarks."
         )
     elif roe_sev == "good":
-        recommendations.append("Continue delivering strong returns to shareholders.")
+        recommendations.append(
+            "Return on equity is strong relative to typical benchmarks, though "
+            "it's worth weighing against the leverage used to achieve it."
+        )
 
     if not recommendations:
         recommendations.append(
-            "No specific figures were available to base a recommendation on — "
+            "No specific figures were available to base an observation on — "
             "upload a complete set of financial statements for a fuller analysis."
         )
 
@@ -1433,7 +1652,7 @@ def generate_pdf():
     story.append(Spacer(1, 10))
 
     breakdown_data = [["Category", "Ratio", "Value"]]
-    for cat, label, value in compute_ratio_set(company_a):
+    for cat, label, value, _mkey, _raw in compute_ratio_set(company_a):
         breakdown_data.append([cat, label, value])
 
     breakdown_table = Table(breakdown_data, colWidths=[90, 210, 120], repeatRows=1)
@@ -1608,7 +1827,7 @@ def generate_pdf():
         rows_a = compute_ratio_set(company_a)
         rows_b = compute_ratio_set(company_b)
         comparison_data = [["Category", "Ratio", report_company, company_name_b]]
-        for (cat, label, val_a), (_, _, val_b) in zip(rows_a, rows_b):
+        for (cat, label, val_a, _mkey_a, _raw_a), (_, _, val_b, _mkey_b, _raw_b) in zip(rows_a, rows_b):
             comparison_data.append([cat, label, val_a, val_b])
 
         comparison_table = Table(comparison_data, colWidths=[80, 175, 85, 85], repeatRows=1)
@@ -1646,32 +1865,42 @@ page = st.session_state["active_page"]
 if page == "Home":
 
     render_page_header(
-        "Welcome",
-        "Upload a company's financial statements, review the detected figures, "
-        "and generate a client-ready ratio analysis report.",
+        "Financial Ratio Analysis Tool",
+        "Upload financial statements. Automatically extract key figures, "
+        "analyse financial performance, compare companies and generate a "
+        "professional financial report.",
     )
 
-    # A single row of compact tags rather than a paragraph + a 5-item
-    # bullet list re-explaining the same thing the subtitle above already
-    # said — three stacked layers of "what this tool does" was the main
-    # source of the page feeling padded/wordy before getting to the
-    # actual data-entry section below.
-    st.markdown(
-        f"""
-        <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:0.4rem;">
-          {"".join(
-              f"<span style='background:{PANEL}; border:1px solid {BORDER}; color:{NAVY}; "
-              f"font-size:0.78rem; font-weight:600; padding:0.32rem 0.85rem; "
-              f"border-radius:20px; white-space:nowrap;'>{tag}</span>"
-              for tag in ["Liquidity", "Profitability", "Leverage", "Company Comparison", "PDF Report"]
-          )}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # A numbered workflow strip so the shape of the tool is obvious to
+    # someone seeing it for the first time, before they've used any of it —
+    # replaces what used to be a row of feature tags (which said *what* the
+    # tool covers but not *how* you'd actually use it end to end).
+    workflow_steps = [
+        ("1", "Upload", "Add a company's statement — Excel, CSV or a text-based PDF."),
+        ("2", "Review", "Check the auto-detected figures below and fix anything missed."),
+        ("3", "Analyse", "See liquidity, profitability, leverage and trend ratios."),
+        ("4", "Report", "Generate a client-ready PDF, labelled with the company's name."),
+    ]
+    step_cols = st.columns(4)
+    for col, (num, title, desc) in zip(step_cols, workflow_steps):
+        with col:
+            st.markdown(
+                f"""
+                <div style="display:flex; gap:0.6rem; align-items:flex-start;">
+                  <div style="flex-shrink:0; width:1.7rem; height:1.7rem; border-radius:50%;
+                              background:{GOLD}; color:#FFFFFF; font-weight:700; font-size:0.85rem;
+                              display:flex; align-items:center; justify-content:center;">{num}</div>
+                  <div>
+                    <div style="font-weight:700; color:{NAVY}; font-size:0.92rem;">{title}</div>
+                    <div style="color:{MUTED}; font-size:0.78rem; line-height:1.4; margin-top:0.1rem;">{desc}</div>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     st.markdown(
-        f"<div style='color:{MUTED}; font-size:0.8rem; margin-top:1.1rem;'>"
+        f"<div style='color:{MUTED}; font-size:0.8rem; margin-top:1.3rem;'>"
         f"Developed by Muniba Ashraf · BSc (Hons) Accounting &amp; Finance</div>",
         unsafe_allow_html=True,
     )
@@ -1710,14 +1939,14 @@ elif page == "Ratio Analysis":
     roe = return_on_equity(net_profit, equity)
 
     dashboard_metrics = [
-        ("Liquidity", "Current Ratio", format_ratio(curr_ratio)),
-        ("Profitability", "Net Profit Margin", format_ratio(np_margin, suffix="%")),
-        ("Efficiency", "Inventory Turnover", format_ratio(inv_turnover, suffix="x")),
-        ("Leverage", "Debt to Equity", format_ratio(de_ratio)),
-        ("Returns", "Return on Equity", format_ratio(roe, suffix="%")),
+        ("Liquidity", "Current Ratio", format_ratio(curr_ratio), "current_ratio", curr_ratio),
+        ("Profitability", "Net Profit Margin", format_ratio(np_margin, suffix="%"), "net_profit_margin", np_margin),
+        ("Efficiency", "Inventory Turnover", format_ratio(inv_turnover, suffix="x"), "inventory_turnover", inv_turnover),
+        ("Leverage", "Debt to Equity", format_ratio(de_ratio), "debt_to_equity", de_ratio),
+        ("Returns", "Return on Equity", format_ratio(roe, suffix="%"), "return_on_equity", roe),
     ]
     metric_cols = st.columns(5)
-    for col, (tag, label, value) in zip(metric_cols, dashboard_metrics):
+    for col, (tag, label, value, mkey, raw) in zip(metric_cols, dashboard_metrics):
         with col:
             with st.container(key=f"tile_{tag.lower()}", border=True):
                 st.markdown(
@@ -1726,10 +1955,58 @@ elif page == "Ratio Analysis":
                     unsafe_allow_html=True,
                 )
                 st.metric(label, value)
+                emoji, phrase, _sev = interpret_ratio(mkey, raw)
+                st.markdown(
+                    f"<div style='color:{MUTED}; font-size:0.78rem; margin-top:-0.4rem;'>{emoji} {phrase}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ---------------- Custom benchmarks ----------------
+    # User-defined only, deliberately — real sector-average ratios come
+    # from paid data providers, and inventing plausible-looking "industry"
+    # figures would misrepresent them as sourced data. Typing in a target
+    # (a competitor's number, a board target, a figure from a report the
+    # user has access to) still gives the numbers context without Claude
+    # fabricating one.
+    with st.expander("📐 Compare against a custom benchmark (optional)"):
+        st.caption(
+            "Enter your own comparison figures — a target, a competitor's "
+            "published ratio, or a sector average from a source you trust. "
+            "Left blank, a ratio simply isn't compared."
+        )
+        bench_cols = st.columns(5)
+        benchmark_rows = []
+        for col, (tag, label, value, mkey, raw) in zip(bench_cols, dashboard_metrics):
+            with col:
+                bench_val = st.number_input(
+                    f"{label} benchmark",
+                    value=None,
+                    step=0.1,
+                    format="%.2f",
+                    key=f"benchmark_{mkey}",
+                    placeholder="Not set",
+                )
+            if bench_val is not None and raw is not None:
+                # Purely a magnitude comparison ("Above"/"Below" the number
+                # you entered) — deliberately not phrased as good/bad, since
+                # whether "above" is favourable depends on the ratio (a
+                # lower debt-to-equity than benchmark is the reassuring
+                # direction; a lower net margin than benchmark isn't).
+                if raw == bench_val:
+                    position = "At benchmark"
+                else:
+                    position = "Above benchmark" if raw > bench_val else "Below benchmark"
+                benchmark_rows.append((label, value, format_ratio(bench_val), position))
+        if benchmark_rows:
+            st.dataframe(
+                pd.DataFrame(benchmark_rows, columns=["Ratio", "Company", "Benchmark", "Position"]),
+                hide_index=True,
+                width="stretch",
+            )
 
     st.divider()
 
-    st.subheader("Financial Insights")
+    st.subheader("Overall Financial Position")
 
     render_insight(liquidity_analysis(curr_ratio))
     render_insight(profitability_analysis(np_margin))
@@ -1742,9 +2019,11 @@ elif page == "Ratio Analysis":
     st.subheader("Full Ratio Breakdown")
     st.caption(
         "Every ratio calculated from the figures on the Home page, grouped the "
-        "way an accountant would work through a set of statements. Ratios "
-        "show N/A where the underlying figures weren't provided — most are "
-        "optional fields not every financial statement reports."
+        "way an accountant would work through a set of statements, each with a "
+        "quick read alongside it. Ratios show N/A where the underlying figures "
+        "weren't provided — most are optional fields not every financial "
+        "statement reports. These reads are general rules of thumb, not a "
+        "verdict — always worth weighing against industry norms and trends."
     )
 
     ratio_rows = compute_ratio_set(company_a)
@@ -1754,13 +2033,57 @@ elif page == "Ratio Analysis":
             f"text-transform:uppercase; letter-spacing:0.07em; margin:1.1rem 0 0.4rem 0;'>{category}</div>",
             unsafe_allow_html=True,
         )
-        cat_df = pd.DataFrame(
-            [(label, value) for cat, label, value in ratio_rows if cat == category],
-            columns=["Ratio", company_name_a],
-        )
+        cat_rows = []
+        for cat, label, value, mkey, raw in ratio_rows:
+            if cat != category:
+                continue
+            emoji, phrase, _sev = interpret_ratio(mkey, raw)
+            cat_rows.append((label, value, f"{emoji} {phrase}"))
+        cat_df = pd.DataFrame(cat_rows, columns=["Ratio", company_name_a, "Read"])
         st.dataframe(cat_df, hide_index=True, width="stretch")
 
     st.divider()
+
+    # ---------------- Multi-Year Trend ----------------
+
+    years_a = trend_years("a")
+    if len(years_a) >= 2:
+        st.subheader("Multi-Year Trend")
+        st.caption(
+            f"{company_name_a}'s ratios recalculated for every year the upload "
+            f"provided figures for ({', '.join(str(y) for y in years_a)}) — this "
+            f"is what answers \"is the company getting better or worse\", not just "
+            f"what the ratio is right now."
+        )
+        _, per_metric = build_year_ratio_table("a")
+        trend_category = st.selectbox(
+            "Category", RATIO_CATEGORIES, key="trend_category_select"
+        )
+        trend_rows = []
+        for mkey, entry in per_metric.items():
+            if entry["category"] != trend_category:
+                continue
+            first_raw = entry["by_year"].get(years_a[0], (None, None))[1]
+            last_raw = entry["by_year"].get(years_a[-1], (None, None))[1]
+            direction = ratio_direction(mkey, first_raw, last_raw)
+            arrow_label = f"{direction[0]} {direction[1]}" if direction else "N/A"
+            row_vals = [entry["by_year"].get(yr, ("N/A", None))[0] for yr in years_a]
+            trend_rows.append([entry["label"]] + row_vals + [arrow_label])
+        trend_df = pd.DataFrame(
+            trend_rows,
+            columns=["Ratio"] + [str(y) for y in years_a] + ["Trend"],
+        )
+        st.dataframe(trend_df, hide_index=True, width="stretch")
+        st.divider()
+    elif not is_sample_data("a"):
+        styled_note(
+            "Only one year of figures was detected for "
+            f"{company_name_a} — upload a statement covering multiple years "
+            "(most professional Income Statements show 2-3 years side by "
+            "side) to unlock the multi-year trend view.",
+            "info",
+        )
+        st.divider()
 
     st.subheader("Financial Performance")
 
@@ -1900,7 +2223,7 @@ elif page == "Company Comparison":
         cat_df = pd.DataFrame(
             [
                 (label_a, val_a, val_b)
-                for (cat_a, label_a, val_a), (_, _, val_b) in zip(rows_a, rows_b)
+                for (cat_a, label_a, val_a, _mkey_a, _raw_a), (_, _, val_b, _mkey_b, _raw_b) in zip(rows_a, rows_b)
                 if cat_a == category
             ],
             columns=["Ratio", company_name_a, company_name_b],
@@ -1932,7 +2255,7 @@ elif page == "Financial Report":
             f"<div style='font-weight:700; color:{NAVY}; font-size:1.05rem;'>"
             f"Financial Ratio Analysis Report</div>"
             f"<div style='color:{MUTED}; font-size:0.88rem; margin-top:0.25rem;'>"
-            f"Includes an executive summary, recommendations, a detailed ratio "
+            f"Includes an executive summary, financial observations, a detailed ratio "
             f"write-up, a summary table with interpretations, and two charts "
             f"(Revenue vs Profit, Assets vs Liabilities) — labelled with "
             f"{company_name_a}'s name throughout, not ours.{b_note}</div>",
@@ -1955,6 +2278,95 @@ elif page == "Financial Report":
                 )
 
             styled_note("Report generated successfully.", "good")
+
+# ---------------- Methodology ----------------
+
+elif page == "Methodology":
+
+    render_page_header(
+        "Methodology",
+        "How every figure and ratio in this tool is actually calculated.",
+    )
+
+    METHODOLOGY_RATIOS = {
+        "Liquidity": [
+            ("Current Ratio", "Current Assets ÷ Current Liabilities"),
+            ("Quick Ratio (Acid-Test)", "(Current Assets − Inventory) ÷ Current Liabilities"),
+            ("Cash Ratio", "Cash &amp; Cash Equivalents ÷ Current Liabilities"),
+            ("Working Capital", "Current Assets − Current Liabilities"),
+        ],
+        "Profitability": [
+            ("Gross Profit Margin", "Gross Profit ÷ Revenue × 100"),
+            ("Operating Profit Margin", "Operating Profit (EBIT) ÷ Revenue × 100"),
+            ("Net Profit Margin", "Net Profit ÷ Revenue × 100"),
+        ],
+        "Efficiency": [
+            ("Debtor (Receivables) Turnover", "Revenue ÷ Accounts Receivable"),
+            ("Debtor Days", "(Accounts Receivable ÷ Revenue) × 365"),
+            ("Inventory Turnover", "Cost of Sales ÷ Inventory"),
+            ("Inventory Days", "(Inventory ÷ Cost of Sales) × 365"),
+            ("Creditor (Payables) Turnover", "Cost of Sales ÷ Accounts Payable"),
+            ("Creditor Days", "(Accounts Payable ÷ Cost of Sales) × 365"),
+            ("Asset Turnover", "Revenue ÷ Total Assets"),
+        ],
+        "Leverage": [
+            ("Debt to Equity", "Total Debt ÷ Equity"),
+            ("Debt Ratio", "Total Debt ÷ Total Assets"),
+            ("Equity Ratio", "Equity ÷ Total Assets"),
+            ("Interest Coverage Ratio", "Operating Profit (EBIT) ÷ Interest Expense"),
+        ],
+        "Returns": [
+            ("Return on Equity (ROE)", "Net Profit ÷ Equity × 100"),
+            ("Return on Assets (ROA)", "Net Profit ÷ Total Assets × 100"),
+            ("Return on Capital Employed (ROCE)", "Operating Profit ÷ (Total Assets − Current Liabilities) × 100"),
+        ],
+    }
+
+    st.write(
+        "Every ratio calculated on the Ratio Analysis, Company Comparison and "
+        "Financial Report pages uses one of the formulas below — the same "
+        "definitions taught in a standard Accounting & Finance syllabus, "
+        "applied to whichever figures were detected (or entered) on the Home "
+        "page. Nothing here is estimated or inferred beyond the formula "
+        "itself."
+    )
+
+    for category in RATIO_CATEGORIES:
+        st.markdown(
+            f"<div style='color:{CATEGORY_COLORS[category]}; font-size:0.78rem; font-weight:700; "
+            f"text-transform:uppercase; letter-spacing:0.07em; margin:1.3rem 0 0.5rem 0;'>{category}</div>",
+            unsafe_allow_html=True,
+        )
+        for label, formula in METHODOLOGY_RATIOS[category]:
+            st.markdown(
+                f"""
+                <div style="padding:0.55rem 0; border-bottom:1px solid {BORDER};">
+                  <div style="font-weight:700; color:{NAVY}; font-size:0.94rem;">{label}</div>
+                  <div style="color:{MUTED}; font-size:0.85rem; font-family:'Source Code Pro', monospace; margin-top:0.15rem;">{formula}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
+    st.subheader("How figures are detected")
+    st.write(
+        "Uploaded statements are read with rule-based matching, not an AI model: "
+        "the tool looks for line-item names that mean the same thing as the 15 "
+        "figures it understands (e.g. \"Turnover\" or \"Net Sales\" are both "
+        "recognized as Revenue), scans every sheet or page rather than assuming "
+        "everything is on one, and auto-detects which row holds the real column "
+        "headers rather than assuming row one. Every detected figure is shown "
+        "for review on the Home page, with a confidence score and the exact "
+        "label it matched, before anything downstream is calculated — see the "
+        "Data Quality Check on that page for a per-field breakdown."
+    )
+    st.caption(
+        "All calculations are based on the financial figures confirmed by the "
+        "user before analysis — editing a figure on the Home page updates "
+        "every ratio, chart and report that uses it."
+    )
 
 # ---------------- About ----------------
 
@@ -2008,7 +2420,7 @@ elif page == "About":
           <a class="about-contact-link" href="mailto:munibaashraf48@gmail.com">
             ✉️ munibaashraf48@gmail.com
           </a>
-          <a class="about-contact-link" href="https://www.linkedin.com/in/muniba-ashraf/" target="_blank">
+          <a class="about-contact-link about-contact-link--primary" href="https://www.linkedin.com/in/muniba-ashraf/" target="_blank">
             💼 LinkedIn
           </a>
         </div>
