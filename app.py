@@ -362,11 +362,29 @@ def inject_custom_css():
             padding: 0.5rem 0.15rem 0.45rem 0.15rem !important;
             box-shadow: none !important;
         }}
+        /* The colours above are set on the <button> itself, expecting its
+           label text to inherit them — but the label is actually rendered
+           as a nested <p> inside stMarkdownContainer, and the plain-body-
+           text fallback rule further below sets an explicit colour on
+           every such <p> directly. An explicit rule on an element always
+           wins over an inherited one, no matter how the ancestor's colour
+           was set, so without this the nav label text would silently fall
+           back to that default instead of the nav's own colours. Repeated
+           for every button-with-a-label case below for the same reason. */
+        .st-key-topnav button[kind="secondary"] p {{
+            color: {MUTED} !important;
+        }}
+        .st-key-topnav button[kind="secondary"]:hover p {{
+            color: {NAVY} !important;
+        }}
+        .st-key-topnav button[kind="primary"] p {{
+            color: {NAVY} !important;
+        }}
 
         /* ---- Buttons (elsewhere in the app) ---- */
         .stButton > button, .stDownloadButton > button {{
             background-color: {GOLD};
-            color: #FFFFFF;
+            color: {"#FFFFFF" if not DARK_MODE else BRAND_NAVY} !important;
             border: none;
             border-radius: 8px;
             font-weight: 600;
@@ -375,7 +393,31 @@ def inject_custom_css():
         }}
         .stButton > button:hover, .stDownloadButton > button:hover {{
             background-color: {GOLD_HOVER};
-            color: #FFFFFF;
+            color: {"#FFFFFF" if not DARK_MODE else BRAND_NAVY} !important;
+        }}
+        /* Same nested-<p> inheritance issue as the nav buttons above —
+           without this, "Generate PDF Report" and any other st.button()
+           label falls back to the plain-body-text colour instead of the
+           button's own (mode-aware) text colour, which is unreadable
+           against the gold button background in dark mode specifically. */
+        .stButton > button p, .stDownloadButton > button p {{
+            color: {"#FFFFFF" if not DARK_MODE else BRAND_NAVY} !important;
+        }}
+        /* ---- The sidebar file uploader's own "Upload" browse button —
+           not covered by the gold .stButton styling above (it's Streamlit's
+           native secondary button, rendered inside the dropzone, not a
+           .stButton), and the plain-text fallback rule was making its label
+           just as invisible against Streamlit's native light button
+           background as the paragraph bug this was all fixing. Scoped to
+           inside stFileUploaderDropzone specifically — a bare
+           [data-testid="stBaseButton-secondary"] selector here would also
+           repaint every plain st.button() elsewhere in the app (e.g.
+           "Generate PDF Report" also renders as a secondary-kind button),
+           which is exactly the regression this scoping avoids. ---- */
+        [data-testid="stFileUploaderDropzone"] [data-testid="stBaseButton-secondary"] {{
+            background-color: {PANEL} !important;
+            color: {NAVY} !important;
+            border-color: {BORDER} !important;
         }}
 
         /* ---- About page — contact links styled as plain outlined pills,
@@ -465,6 +507,27 @@ def inject_custom_css():
         }}
         [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {{
             color: {NAVY} !important;
+        }}
+        /* ---- Plain body text fallback. Streamlit's own theme (config.toml)
+           fixes ordinary paragraph text to one colour permanently — it never
+           switches with this custom dark-mode toggle — so any st.write()/
+           st.markdown() text that isn't wrapped in one of the app's own
+           coloured cards/captions (which set their own colour inline and so
+           still win over this) was staying dark-navy-on-dark-navy and
+           disappearing completely in dark mode. This sets a sane default
+           that follows the mode; anything more specific above still wins. ---- */
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li,
+        [data-testid="stMarkdownContainer"] ol,
+        [data-testid="stMarkdownContainer"] ul {{
+            color: {NAVY};
+        }}
+        /* ---- Tabs (Company A / Company B on the Home page) — the inactive
+           tab label has the same invisible-text problem as plain body text
+           above; muted rather than full navy so it still visually reads as
+           "not the selected tab". ---- */
+        .stTabs [aria-selected="false"] {{
+            color: {MUTED} !important;
         }}
 
         /* ---- Metrics ---- */
