@@ -304,7 +304,16 @@ def inject_custom_css():
             overflow-x: auto !important;
             overflow-y: visible !important;
             padding-bottom: 4px !important;
-            scrollbar-width: thin;
+            scrollbar-width: none !important; /* Firefox */
+            -ms-overflow-style: none !important; /* old Edge/IE */
+        }}
+        /* The nav row still scrolls horizontally if a window is ever too
+           narrow to fit every tab (so nothing overlaps or wraps to a
+           second line) — this just hides the visible scrollbar track/thumb
+           that sat under it, which had no purpose here since the row never
+           needs the user to actually see or grab a scrollbar to use it. */
+        .st-key-topnav [data-testid="stHorizontalBlock"]::-webkit-scrollbar {{
+            display: none !important; /* Chrome/Safari/Edge (Chromium) */
         }}
         .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             width: auto !important;
@@ -601,7 +610,7 @@ def render_topbar():
             st.markdown(
                 f"""
                 <div style="display:flex; align-items:center; gap:0.65rem;
-                            padding-top:0.35rem; white-space:nowrap;">
+                            padding-top:0.15rem; white-space:nowrap;">
                   <div style="width:1.9rem; height:1.9rem; border-radius:5px;
                               background:{BRAND_NAVY}; display:flex; align-items:center;
                               justify-content:center; flex-shrink:0;">
