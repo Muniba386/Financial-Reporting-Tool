@@ -419,19 +419,18 @@ def inject_custom_css():
             background-color: transparent !important;
         }}
 
-        /* ---- Native input widgets. Streamlit's own theme (config.toml's
-           secondaryBackgroundColor) tints every input box with the panel
-           colour by default — in light mode that reads as an unwanted tan
-           highlight sitting behind Revenue, Cost of Sales, and every other
-           field, which isn't the plain look the app is meant to have.
-           Forced to plain white in light mode; kept as the dark panel
-           colour in dark mode, where it's needed for contrast against the
-           dark page. ---- */
+        /* ---- Native input widgets — kept in step with the palette above
+           so dark mode covers form fields, not just headings and cards.
+           The tan panel background on Revenue, Cost of Sales, and every
+           other field in light mode is the tool's original look (it comes
+           from the app's own secondaryBackgroundColor theme, not a change
+           made this session) — restored here after a wrong guess briefly
+           forced these to plain white. ---- */
         [data-testid="stNumberInput"] input,
         [data-testid="stTextInput"] input,
         [data-testid="stNumberInput"] div,
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div {{
-            background-color: {PANEL if DARK_MODE else "#FFFFFF"} !important;
+            background-color: {PANEL} !important;
             color: {NAVY} !important;
             border-color: {BORDER} !important;
         }}
