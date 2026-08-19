@@ -286,8 +286,10 @@ def inject_custom_css():
            per explicit request. If the window gets too narrow to fit
            every tab, the row scrolls horizontally within itself instead
            of breaking onto a new line or overlapping other content. The
-           logo/wordmark shrinks its minimum width first so the nav tabs
-           get priority on the available space. */
+           logo/wordmark column still grows to fill the leftover space
+           (as it did originally), which is what keeps the same open gap
+           before the nav tabs rather than crowding them right up against
+           the wordmark. */
         .st-key-topnav {{
             border-bottom: 1px solid {BORDER};
             padding-bottom: 0.6rem;
@@ -296,7 +298,6 @@ def inject_custom_css():
         .st-key-topnav [data-testid="stHorizontalBlock"] {{
             flex-wrap: nowrap !important;
             align-items: center !important;
-            gap: 0.6rem !important;
             overflow-x: auto !important;
             overflow-y: hidden !important;
             scrollbar-width: thin;
@@ -307,8 +308,8 @@ def inject_custom_css():
             flex: 0 0 auto !important;
         }}
         .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {{
-            flex: 0 1 auto !important;
-            min-width: 120px !important;
+            flex: 1 1 auto !important;
+            min-width: 180px !important;
         }}
         .st-key-topnav button {{
             white-space: nowrap;
@@ -395,24 +396,12 @@ def inject_custom_css():
             color: {GOLD} !important;
         }}
 
-        /* ---- Light/dark toggle — pinned to a fixed spot just under
-           Streamlit's own native "⋮" menu, top-right, so it stays in the
-           same place regardless of how the nav row below wraps at
-           different window widths (that wrapping — not dark mode itself —
-           was what made it "disappear" on narrower/laptop screens: it was
-           landing on an orphaned line at the far left of the page). ---- */
-        .st-key-theme_toggle_fixed {{
-            position: fixed !important;
-            top: 3.35rem;
-            right: 1.1rem;
-            z-index: 999999 !important;
-            width: fit-content !important;
-            left: auto !important;
-        }}
-
-        /* A small, quiet icon button, deliberately not styled like the
-           brass call-to-action buttons above, so it reads as a utility
-           control rather than competing for attention. */
+        /* ---- Light/dark toggle — a small, quiet icon button, deliberately
+           not styled like the brass call-to-action buttons above, so it
+           reads as a utility control rather than competing for attention.
+           Lives as the last item in the nav row itself (see render_topbar)
+           — the row is locked to a single line at every width, so this
+           never gets orphaned onto its own line the way it used to. ---- */
         .st-key-theme_toggle button {{
             background-color: transparent !important;
             border: 1px solid {BORDER} !important;
@@ -512,30 +501,12 @@ NAV_PAGES = ["Home", "Ratio Analysis", "Company Comparison", "Financial Report",
 
 def render_topbar():
     """A flat, underline-tab top navigation bar: a small monogram mark and
-    serif wordmark on the left, plain text tabs on the right. The active
-    page is bold with a thin brass underline; the rest sit in muted grey
-    and only pick up colour on hover — closer to a financial masthead than
-    a row of app buttons. Wraps onto a second line on narrower screens
-    instead of overlapping (see the CSS above)."""
-    # A small, self-built light/dark toggle, fixed to the top-right corner
-    # of the viewport rather than living inside the wrapping nav row below.
-    # Streamlit's own native menu ("⋮", top-right) can't be extended with
-    # custom items — there's no supported API for that — so this can't
-    # literally live inside it. But leaving it in the ordinary nav flow
-    # meant that on narrower/laptop-width windows, once the nav wrapped
-    # onto a second line, the toggle (and "About") landed on their own
-    # orphaned line at the far left of the content area, disconnected from
-    # everything — which is what looked broken. Pinning it here keeps it in
-    # the same spot, just under Streamlit's native menu, regardless of how
-    # the rest of the nav wraps.
-    with st.container(key="theme_toggle_fixed"):
-        icon = "☀️" if DARK_MODE else "\U0001f319"
-        if st.button(icon, key="theme_toggle", help="Switch between light and dark mode"):
-            st.session_state["dark_mode"] = not DARK_MODE
-            st.rerun()
-
+    serif wordmark on the left, plain text tabs and the theme toggle on the
+    right, all on one line — the row no longer wraps at any width (see the
+    CSS above), so the toggle can live right in the nav flow instead of
+    needing to be pinned separately."""
     with st.container(key="topnav"):
-        cols = st.columns([2.2, 1, 1, 1, 1, 1])
+        cols = st.columns([2.2, 1, 1, 1, 1, 1, 0.45])
         with cols[0]:
             st.markdown(
                 f"""
@@ -565,6 +536,17 @@ def render_topbar():
                 ):
                     st.session_state["active_page"] = name
                     st.rerun()
+        with cols[6]:
+            # A small, self-built light/dark toggle — Streamlit's own theme
+            # switcher is unavailable whenever a custom [theme] is set in
+            # config.toml, so this reads and flips its own session_state
+            # flag instead and swaps the whole palette computed above. Sits
+            # right in the nav row, last item, on the same single line as
+            # everything else (the row no longer wraps at any width).
+            icon = "☀️" if DARK_MODE else "\U0001f319"
+            if st.button(icon, key="theme_toggle", help="Switch between light and dark mode"):
+                st.session_state["dark_mode"] = not DARK_MODE
+                st.rerun()
 
 
 def render_page_header(title, subtitle):
