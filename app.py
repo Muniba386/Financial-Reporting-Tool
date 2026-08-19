@@ -231,6 +231,30 @@ def inject_custom_css():
             fill: {NAVY} !important;
         }}
 
+        /* ---- Streamlit Community Cloud's own Share/Star/Fork/GitHub
+           toolbar buttons — injected into this same header when the app is
+           actually deployed (they don't render locally, which is why this
+           was missed the first time round). The "Share" text label is
+           real text and takes a plain colour override like everything
+           else. The Star/Edit/GitHub icons, though, are each baked as a
+           fixed-colour SVG background-image (colour hardcoded into the
+           image bytes at render time, not a live element) — `color` and
+           `fill` genuinely cannot repaint those, confirmed by inspecting
+           the actual data URI. A CSS filter is the only way to recolour a
+           background-image: invert(1) flips that hardcoded dark navy into
+           a light, legible tone (and happens to land close to this app's
+           own warm palette) — applied only in dark mode, since inverting
+           them in light mode would make them invisible instead. ---- */
+        [data-testid="stToolbarActionButton"],
+        [data-testid="stToolbarActionButton"] button,
+        [data-testid="stToolbarActionButtonLabel"] {{
+            color: {NAVY} !important;
+            fill: {NAVY} !important;
+        }}
+        [data-testid="stToolbarActionButtonIcon"] {{
+            {"filter: invert(1);" if DARK_MODE else "filter: none;"}
+        }}
+
         /* ---- st.caption() text — Streamlit renders these at a fixed
            navy-at-60%-opacity derived from config.toml's static theme, so
            in dark mode the text colour is nearly the same as the dark
@@ -258,28 +282,33 @@ def inject_custom_css():
         }}
 
         /* ---- Top navigation bar ----
-           Wraps onto a second line rather than compressing/overlapping
-           when the window is too narrow for one row — this is what
-           actually fixes the nav on ordinary laptop widths, rather than
-           just tuning column ratios that only worked at one exact size. */
+           Stays on a single line always — never wraps to a second row,
+           per explicit request. If the window gets too narrow to fit
+           every tab, the row scrolls horizontally within itself instead
+           of breaking onto a new line or overlapping other content. The
+           logo/wordmark shrinks its minimum width first so the nav tabs
+           get priority on the available space. */
         .st-key-topnav {{
             border-bottom: 1px solid {BORDER};
             padding-bottom: 0.6rem;
             margin-bottom: 1.8rem;
         }}
         .st-key-topnav [data-testid="stHorizontalBlock"] {{
-            flex-wrap: wrap !important;
-            row-gap: 0.5rem !important;
+            flex-wrap: nowrap !important;
             align-items: center !important;
+            gap: 0.6rem !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            scrollbar-width: thin;
         }}
         .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
             width: auto !important;
             min-width: 0 !important;
-            flex: 0 1 auto !important;
+            flex: 0 0 auto !important;
         }}
         .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {{
-            flex: 1 1 auto !important;
-            min-width: 180px !important;
+            flex: 0 1 auto !important;
+            min-width: 120px !important;
         }}
         .st-key-topnav button {{
             white-space: nowrap;
@@ -288,6 +317,15 @@ def inject_custom_css():
             white-space: nowrap;
             font-size: 0.92rem !important;
             letter-spacing: 0.02em;
+        }}
+        /* Below ~950px even the tightened nav can't fit five tabs plus the
+           wordmark on one line without scrolling — shrink the wordmark
+           text itself first so more of the actual nav stays in view
+           before anyone has to scroll sideways to reach "About". */
+        @media (max-width: 950px) {{
+            .st-key-topnav .topnav-wordmark {{
+                font-size: 0.95rem !important;
+            }}
         }}
         /* Underline-tab nav rather than filled pill buttons — reads as an
            editorial/financial masthead rather than a row of app buttons. */
@@ -357,9 +395,24 @@ def inject_custom_css():
             color: {GOLD} !important;
         }}
 
-        /* ---- Light/dark toggle — a small, quiet icon button, deliberately
-           not styled like the brass call-to-action buttons above, so it
-           reads as a utility control rather than competing for attention. ---- */
+        /* ---- Light/dark toggle — pinned to a fixed spot just under
+           Streamlit's own native "⋮" menu, top-right, so it stays in the
+           same place regardless of how the nav row below wraps at
+           different window widths (that wrapping — not dark mode itself —
+           was what made it "disappear" on narrower/laptop screens: it was
+           landing on an orphaned line at the far left of the page). ---- */
+        .st-key-theme_toggle_fixed {{
+            position: fixed !important;
+            top: 3.35rem;
+            right: 1.1rem;
+            z-index: 999999 !important;
+            width: fit-content !important;
+            left: auto !important;
+        }}
+
+        /* A small, quiet icon button, deliberately not styled like the
+           brass call-to-action buttons above, so it reads as a utility
+           control rather than competing for attention. */
         .st-key-theme_toggle button {{
             background-color: transparent !important;
             border: 1px solid {BORDER} !important;
@@ -464,8 +517,25 @@ def render_topbar():
     and only pick up colour on hover — closer to a financial masthead than
     a row of app buttons. Wraps onto a second line on narrower screens
     instead of overlapping (see the CSS above)."""
+    # A small, self-built light/dark toggle, fixed to the top-right corner
+    # of the viewport rather than living inside the wrapping nav row below.
+    # Streamlit's own native menu ("⋮", top-right) can't be extended with
+    # custom items — there's no supported API for that — so this can't
+    # literally live inside it. But leaving it in the ordinary nav flow
+    # meant that on narrower/laptop-width windows, once the nav wrapped
+    # onto a second line, the toggle (and "About") landed on their own
+    # orphaned line at the far left of the content area, disconnected from
+    # everything — which is what looked broken. Pinning it here keeps it in
+    # the same spot, just under Streamlit's native menu, regardless of how
+    # the rest of the nav wraps.
+    with st.container(key="theme_toggle_fixed"):
+        icon = "☀️" if DARK_MODE else "\U0001f319"
+        if st.button(icon, key="theme_toggle", help="Switch between light and dark mode"):
+            st.session_state["dark_mode"] = not DARK_MODE
+            st.rerun()
+
     with st.container(key="topnav"):
-        cols = st.columns([2.0, 1, 1, 1, 1, 1, 0.45])
+        cols = st.columns([2.2, 1, 1, 1, 1, 1])
         with cols[0]:
             st.markdown(
                 f"""
@@ -477,8 +547,8 @@ def render_topbar():
                     <span style="font-family:'Source Serif 4', Georgia, serif;
                                  font-weight:700; font-size:1.05rem; color:{GOLD};">F</span>
                   </div>
-                  <span style="font-family:'Source Serif 4', Georgia, serif;
-                               font-weight:700; font-size:1.12rem; color:{NAVY};">
+                  <span class="topnav-wordmark" style="font-family:'Source Serif 4', Georgia, serif;
+                               font-weight:700; font-size:1.12rem; color:{NAVY}; white-space:nowrap;">
                     Financial Ratio Analysis Tool
                   </span>
                 </div>
@@ -495,16 +565,6 @@ def render_topbar():
                 ):
                     st.session_state["active_page"] = name
                     st.rerun()
-        with cols[6]:
-            # A small, self-built light/dark toggle — Streamlit's own theme
-            # switcher is unavailable whenever a custom [theme] is set in
-            # config.toml (confirmed: it doesn't appear even in full
-            # developer mode), so this reads and flips its own session_state
-            # flag instead and swaps the whole palette computed above.
-            icon = "☀️" if DARK_MODE else "\U0001f319"
-            if st.button(icon, key="theme_toggle", help="Switch between light and dark mode"):
-                st.session_state["dark_mode"] = not DARK_MODE
-                st.rerun()
 
 
 def render_page_header(title, subtitle):
