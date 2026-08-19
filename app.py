@@ -335,6 +335,28 @@ def inject_custom_css():
             color: #FFFFFF;
         }}
 
+        /* ---- About page — contact links styled as plain outlined pills,
+           matching the tag chips used elsewhere, rather than filled brass
+           buttons (this is informational, not a call to action). ---- */
+        .about-contact-link {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: {PANEL};
+            border: 1px solid {BORDER};
+            color: {NAVY} !important;
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 0.55rem 1.1rem;
+            border-radius: 20px;
+            text-decoration: none !important;
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }}
+        .about-contact-link:hover {{
+            border-color: {GOLD};
+            color: {GOLD} !important;
+        }}
+
         /* ---- Light/dark toggle — a small, quiet icon button, deliberately
            not styled like the brass call-to-action buttons above, so it
            reads as a utility control rather than competing for attention. ---- */
@@ -432,7 +454,7 @@ def inject_custom_css():
     )
 
 
-NAV_PAGES = ["Home", "Ratio Analysis", "Company Comparison", "Financial Report"]
+NAV_PAGES = ["Home", "Ratio Analysis", "Company Comparison", "Financial Report", "About"]
 
 
 def render_topbar():
@@ -443,7 +465,7 @@ def render_topbar():
     a row of app buttons. Wraps onto a second line on narrower screens
     instead of overlapping (see the CSS above)."""
     with st.container(key="topnav"):
-        cols = st.columns([2.2, 1, 1, 1, 1, 0.45])
+        cols = st.columns([2.0, 1, 1, 1, 1, 1, 0.45])
         with cols[0]:
             st.markdown(
                 f"""
@@ -463,7 +485,7 @@ def render_topbar():
                 """,
                 unsafe_allow_html=True,
             )
-        for col, name in zip(cols[1:5], NAV_PAGES):
+        for col, name in zip(cols[1:6], NAV_PAGES):
             with col:
                 is_active = st.session_state.get("active_page", "Home") == name
                 if st.button(
@@ -473,7 +495,7 @@ def render_topbar():
                 ):
                     st.session_state["active_page"] = name
                     st.rerun()
-        with cols[5]:
+        with cols[6]:
             # A small, self-built light/dark toggle — Streamlit's own theme
             # switcher is unavailable whenever a custom [theme] is set in
             # config.toml (confirmed: it doesn't appear even in full
@@ -1792,3 +1814,63 @@ elif page == "Financial Report":
                 )
 
             styled_note("Report generated successfully.", "good")
+
+# ---------------- About ----------------
+
+elif page == "About":
+
+    render_page_header(
+        "About",
+        "The person behind this tool, and how to get in touch.",
+    )
+
+    with st.container(border=True):
+        st.markdown(
+            f"""
+            <div style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
+                        font-size:1.3rem; color:{NAVY}; margin-bottom:0.6rem;">
+                Muniba Ashraf
+            </div>
+            <div style="color:{MUTED}; font-size:0.98rem; line-height:1.7; max-width:640px;">
+                I'm a First Class Accounting &amp; Finance graduate with an interest in where
+                accounting meets code. During my degree, I kept noticing how mechanical ratio
+                analysis really is — the same fifteen to twenty ratios, recalculated by hand,
+                for every set of financial statements. So I built this tool to take that first
+                stage off an accountant's hands: upload a company's statements in whatever
+                format they happen to be in, and it extracts the figures, calculates the full
+                ratio set, and generates a client-ready report — while leaving the actual
+                judgement to you.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            f"""
+            <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:1.1rem;">
+              {"".join(
+                  f"<span style='background:{PANEL}; border:1px solid {BORDER}; color:{NAVY}; "
+                  f"font-size:0.78rem; font-weight:600; padding:0.32rem 0.85rem; "
+                  f"border-radius:20px; white-space:nowrap;'>{tag}</span>"
+                  for tag in ["BSc (Hons) Accounting & Finance — First Class", "Python", "Streamlit"]
+              )}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.write("")
+    st.subheader("Get in touch")
+    st.markdown(
+        f"""
+        <div style="display:flex; flex-wrap:wrap; gap:0.7rem; margin-top:0.4rem;">
+          <a class="about-contact-link" href="mailto:munibaashraf48@gmail.com">
+            ✉️ munibaashraf48@gmail.com
+          </a>
+          <a class="about-contact-link" href="https://www.linkedin.com/in/muniba-ashraf/" target="_blank">
+            💼 LinkedIn
+          </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
