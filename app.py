@@ -425,14 +425,32 @@ def inject_custom_css():
            other field in light mode is the tool's original look (it comes
            from the app's own secondaryBackgroundColor theme, not a change
            made this session) — restored here after a wrong guess briefly
-           forced these to plain white. ---- */
+           forced these to plain white.
+           Scoped to stNumberInputContainer (the actual value/stepper row)
+           rather than a bare "div" under stNumberInput — that broader
+           selector was also catching the tiny stMarkdownContainer div that
+           wraps the field's own LABEL text (e.g. "Revenue", "Cost of
+           Sales"), tinting a highlight box behind just that word. This
+           keeps the panel colour on the input itself and off the label. ---- */
         [data-testid="stNumberInput"] input,
         [data-testid="stTextInput"] input,
-        [data-testid="stNumberInput"] div,
+        [data-testid="stNumberInputContainer"],
         [data-testid="stSelectbox"] div[data-baseweb="select"] > div {{
             background-color: {PANEL} !important;
             color: {NAVY} !important;
             border-color: {BORDER} !important;
+        }}
+        /* The number input's +/- stepper buttons don't inherit the palette
+           above — they keep the base theme's fixed dark-navy icon colour
+           regardless of mode, which made them invisible against the dark
+           panel background in dark mode. Tied to {NAVY} so they stay
+           visible (and themed) in both modes. */
+        [data-testid="stNumberInputStepUp"],
+        [data-testid="stNumberInputStepDown"],
+        [data-testid="stNumberInputStepUp"] svg,
+        [data-testid="stNumberInputStepDown"] svg {{
+            color: {NAVY} !important;
+            fill: {NAVY} !important;
         }}
         [data-testid="stFileUploaderDropzone"] {{
             background-color: {PANEL} !important;
