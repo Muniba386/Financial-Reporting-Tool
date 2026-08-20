@@ -23,14 +23,14 @@ where a full paragraph per ratio would be too dense.
 """
 
 
-def liquidity_analysis(current_ratio):
+def liquidity_analysis(current_ratio, currency="£"):
     if current_ratio is None:
         return "Current ratio unavailable", "Current liabilities are zero, so this ratio can't be calculated.", "unavailable"
 
     if current_ratio >= 1.5:
         return (
             "Comfortable liquidity position",
-            f"The company holds £{current_ratio:.2f} of current assets for every £1 of "
+            f"The company holds {currency}{current_ratio:.2f} of current assets for every {currency}1 of "
             f"current liabilities. This suggests a reasonably comfortable short-term "
             f"liquidity position, though interpretation should still consider industry "
             f"norms and the trend over recent periods.",
@@ -39,7 +39,7 @@ def liquidity_analysis(current_ratio):
     elif current_ratio >= 1:
         return (
             "Adequate liquidity position",
-            f"Current assets exceed current liabilities (£{current_ratio:.2f} to £1), but "
+            f"Current assets exceed current liabilities ({currency}{current_ratio:.2f} to {currency}1), but "
             f"the margin is modest. This is generally considered adequate rather than "
             f"strong — worth watching alongside the trend over time.",
             "medium",
@@ -47,22 +47,22 @@ def liquidity_analysis(current_ratio):
     else:
         return (
             "Liquidity position warrants attention",
-            f"Current liabilities exceed current assets (£{current_ratio:.2f} of current "
-            f"assets for every £1 of current liabilities), which can point to short-term "
+            f"Current liabilities exceed current assets ({currency}{current_ratio:.2f} of current "
+            f"assets for every {currency}1 of current liabilities), which can point to short-term "
             f"cash-flow pressure. That said, a ratio below 1 isn't unusual in some "
             f"industries with fast inventory or cash cycles.",
             "bad",
         )
 
 
-def profitability_analysis(net_profit_margin):
+def profitability_analysis(net_profit_margin, currency="£"):
     if net_profit_margin is None:
         return "Net profit margin unavailable", "Revenue is zero, so this margin can't be calculated.", "unavailable"
 
     if net_profit_margin >= 20:
         return (
             "Strong net profit margin",
-            f"For every £100 of revenue, roughly £{net_profit_margin:.0f} is retained as "
+            f"For every {currency}100 of revenue, roughly {currency}{net_profit_margin:.0f} is retained as "
             f"net profit after all costs. This is a strong margin by most general "
             f"standards, although what counts as strong varies considerably by sector.",
             "good",
@@ -70,7 +70,7 @@ def profitability_analysis(net_profit_margin):
     elif net_profit_margin >= 10:
         return (
             "Sound net profit margin",
-            f"Roughly £{net_profit_margin:.0f} of every £100 of revenue is retained as "
+            f"Roughly {currency}{net_profit_margin:.0f} of every {currency}100 of revenue is retained as "
             f"net profit — a reasonable margin, best read alongside industry peers and "
             f"the company's own trend over time.",
             "medium",
@@ -78,7 +78,7 @@ def profitability_analysis(net_profit_margin):
     else:
         return (
             "Net profit margin below typical benchmarks",
-            f"Only around £{net_profit_margin:.0f} of every £100 of revenue is retained "
+            f"Only around {currency}{net_profit_margin:.0f} of every {currency}100 of revenue is retained "
             f"as net profit. This may reflect higher costs, pricing pressure, or simply "
             f"a lower-margin sector — worth comparing against industry peers rather than "
             f"reading in isolation.",
@@ -86,14 +86,14 @@ def profitability_analysis(net_profit_margin):
         )
 
 
-def debt_analysis(debt_equity):
+def debt_analysis(debt_equity, currency="£"):
     if debt_equity is None:
         return "Debt-to-equity unavailable", "Equity is zero, so this ratio can't be calculated.", "unavailable"
 
     if debt_equity < 1:
         return (
             "Conservative leverage",
-            f"Total debt is £{debt_equity:.2f} for every £1 of equity, meaning the "
+            f"Total debt is {currency}{debt_equity:.2f} for every {currency}1 of equity, meaning the "
             f"company relies more on shareholder funding than borrowing. This generally "
             f"points to lower financial risk, though the appropriate level of leverage "
             f"varies considerably by industry and growth stage.",
@@ -102,7 +102,7 @@ def debt_analysis(debt_equity):
     elif debt_equity < 2:
         return (
             "Moderate leverage",
-            f"Debt stands at £{debt_equity:.2f} for every £1 of equity — a moderate "
+            f"Debt stands at {currency}{debt_equity:.2f} for every {currency}1 of equity — a moderate "
             f"level of financial risk that's worth monitoring as the business grows, "
             f"particularly against sector norms.",
             "medium",
@@ -110,7 +110,7 @@ def debt_analysis(debt_equity):
     else:
         return (
             "Elevated leverage",
-            f"Debt is £{debt_equity:.2f} for every £1 of equity, indicating a heavier "
+            f"Debt is {currency}{debt_equity:.2f} for every {currency}1 of equity, indicating a heavier "
             f"reliance on debt financing. This increases financial risk, particularly if "
             f"profits or interest rates move unfavourably — though capital-intensive "
             f"industries often operate with materially higher gearing as a matter of "
@@ -119,14 +119,14 @@ def debt_analysis(debt_equity):
         )
 
 
-def gross_margin_analysis(gross_profit_margin):
+def gross_margin_analysis(gross_profit_margin, currency="£"):
     if gross_profit_margin is None:
         return "Gross profit margin unavailable", "Revenue is zero, so this margin can't be calculated.", "unavailable"
 
     if gross_profit_margin >= 50:
         return (
             "Strong gross margin",
-            f"About £{gross_profit_margin:.0f} of every £100 of revenue remains after "
+            f"About {currency}{gross_profit_margin:.0f} of every {currency}100 of revenue remains after "
             f"direct production/service costs. A high gross margin generally leaves more "
             f"room to cover overheads, though typical margins differ substantially "
             f"between industries.",
@@ -135,28 +135,28 @@ def gross_margin_analysis(gross_profit_margin):
     elif gross_profit_margin >= 30:
         return (
             "Healthy gross margin",
-            f"About £{gross_profit_margin:.0f} of every £100 of revenue remains after "
+            f"About {currency}{gross_profit_margin:.0f} of every {currency}100 of revenue remains after "
             f"direct costs — a reasonable margin, best judged against sector norms.",
             "medium",
         )
     else:
         return (
             "Gross margin below typical benchmarks",
-            f"Only around £{gross_profit_margin:.0f} of every £100 of revenue remains "
+            f"Only around {currency}{gross_profit_margin:.0f} of every {currency}100 of revenue remains "
             f"after direct costs. This can reflect pricing, input costs, or a "
             f"lower-margin business model — context from the sector matters here.",
             "bad",
         )
 
 
-def roe_analysis(roe):
+def roe_analysis(roe, currency="£"):
     if roe is None:
         return "Return on equity unavailable", "Equity is zero, so this ratio can't be calculated.", "unavailable"
 
     if roe >= 20:
         return (
             "Strong shareholder returns",
-            f"For every £100 of shareholders' equity, roughly £{roe:.0f} of profit was "
+            f"For every {currency}100 of shareholders' equity, roughly {currency}{roe:.0f} of profit was "
             f"generated over the period. This is a strong return by general standards, "
             f"though it should be weighed against the level of risk and leverage taken "
             f"on to achieve it.",
@@ -165,7 +165,7 @@ def roe_analysis(roe):
     elif roe >= 10:
         return (
             "Moderate shareholder returns",
-            f"Roughly £{roe:.0f} of profit was generated for every £100 of shareholders' "
+            f"Roughly {currency}{roe:.0f} of profit was generated for every {currency}100 of shareholders' "
             f"equity — a moderate return, best compared against similar companies in the "
             f"same sector.",
             "medium",
@@ -173,7 +173,7 @@ def roe_analysis(roe):
     else:
         return (
             "Shareholder returns below typical benchmarks",
-            f"Only around £{roe:.0f} of profit was generated for every £100 of "
+            f"Only around {currency}{roe:.0f} of profit was generated for every {currency}100 of "
             f"shareholders' equity. This may reflect the business's stage, sector, or "
             f"current performance — worth reading alongside profitability and leverage "
             f"together rather than in isolation.",

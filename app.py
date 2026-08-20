@@ -1,4 +1,6 @@
 import re
+import json
+import base64
 
 import streamlit as st
 import pandas as pd
@@ -196,14 +198,36 @@ def render_insight(result):
     styled_note(f"<b>{headline}.</b> {detail}", severity)
 
 
-def money_fmt(x):
+CURRENCY_OPTIONS = {
+    "£ GBP": "£",
+    "$ USD": "$",
+    "€ EUR": "€",
+    "¥ JPY": "¥",
+}
+
+
+def get_currency_symbol():
+    """Session-wide display currency, defaulting to £ (unchanged from
+    before this was added) — set via the sidebar selector. This only
+    changes which symbol is *shown*; it doesn't convert figures, since
+    doing that properly would need real exchange rates. If a report is
+    for a USD/EUR/JPY company, this at least stops the report labelling
+    their numbers with the wrong currency symbol."""
+    return st.session_state.get("currency_symbol", "£")
+
+
+def money_fmt(x, symbol=None):
     """Format a currency amount, correctly handling negative values.
     A naive f-string (f"£{x:,.0f}") renders a loss or negative working
     capital as the malformed "£-12,000"; this puts the minus sign before
     the currency symbol instead ("-£12,000"), which is how real accounts
-    are actually written."""
+    are actually written. symbol defaults to the session's selected
+    currency (£ unless changed) so every existing call site picks up the
+    selector automatically without needing to be touched."""
+    if symbol is None:
+        symbol = get_currency_symbol()
     sign = "-" if x < 0 else ""
-    return f"{sign}£{abs(x):,.0f}"
+    return f"{sign}{symbol}{abs(x):,.0f}"
 
 
 def inject_custom_css():
@@ -719,7 +743,7 @@ def render_bar_chart(data, color=GOLD, height=320):
         .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, size=54)
         .encode(
             x=alt.X("Category:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Amount:Q", title="Amount (£)", axis=alt.Axis(format=",.0f")),
+            y=alt.Y("Amount:Q", title=f"Amount ({get_currency_symbol()})", axis=alt.Axis(format=",.0f")),
             color=alt.value(color),
             tooltip=[
                 alt.Tooltip("Category:N", title="Item"),
@@ -843,6 +867,15 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
         st.session_state[f"{prefix}_default_company_name"] = guessed_name
         st.session_state[f"{prefix}_company_name"] = guessed_name
 
+        # Keep the raw PDF bytes (only when the upload actually is a PDF)
+        # so the Home page can offer a side-by-side viewer of the source
+        # document next to the extracted figures — purely additive, reads
+        # via .getvalue() rather than consuming uploaded_file's read
+        # position, so it doesn't affect the extraction call above.
+        is_pdf = uploaded_file is not None and str(filename).lower().endswith(".pdf")
+        st.session_state[f"{prefix}_pdf_bytes"] = uploaded_file.getvalue() if is_pdf else None
+        st.session_state[f"{prefix}_is_pdf"] = is_pdf
+
     if f"{prefix}_values" not in st.session_state:
         st.session_state[f"{prefix}_values"] = {metric: 0.0 for metric in METRICS}
     if f"{prefix}_trend" not in st.session_state:
@@ -853,6 +886,82 @@ def sync_company_data(prefix, uploaded_file, default_path, label):
 
 def company_values(prefix):
     return dict(st.session_state[f"{prefix}_values"])
+
+
+def build_session_snapshot():
+    """Serializes everything a user could have manually typed or edited —
+    both companies' 15 figures, their names, and the selected currency —
+    into a small plain-JSON dict for the "Save session" download. Doesn't
+    include the original uploaded file itself (not needed to restore the
+    figures, and keeps the download small)."""
+    return {
+        "schema_version": 1,
+        "currency_symbol": get_currency_symbol(),
+        "companies": {
+            prefix: {
+                "company_name": st.session_state.get(f"{prefix}_company_name", ""),
+                "values": dict(st.session_state.get(f"{prefix}_values", {})),
+            }
+            for prefix in ("a", "b")
+        },
+    }
+
+
+def apply_session_restore(payload):
+    """The inverse of build_session_snapshot(). Must run before any widget
+    it touches (the currency selectbox, and each company's number_input/
+    text_input fields) has been instantiated in this script run — Streamlit
+    only honours a fresh session_state value for a keyed widget up until
+    that widget is first created in the current run, so this is called
+    right at the top of the sidebar setup, before those widgets exist.
+    Setting only the plain "{prefix}_values" dict wouldn't be enough on
+    its own: once a widget with a given key has rendered before, it keeps
+    showing its own persisted state on the next rerun regardless of what
+    the backing dict says — so the widget's own session_state key is set
+    directly here too, matching the exact key each field will use this
+    run (derived the same way render_data_review/render_company_name_field
+    compute it)."""
+    if not isinstance(payload, dict):
+        raise ValueError("This doesn't look like a saved session file.")
+
+    currency_symbol = payload.get("currency_symbol")
+    if currency_symbol in CURRENCY_OPTIONS.values():
+        for label, symbol in CURRENCY_OPTIONS.items():
+            if symbol == currency_symbol:
+                st.session_state["currency_choice"] = label
+                st.session_state["currency_symbol"] = symbol
+                break
+
+    companies = payload.get("companies", {})
+    if not isinstance(companies, dict):
+        raise ValueError("This doesn't look like a saved session file.")
+
+    for prefix in ("a", "b"):
+        company = companies.get(prefix)
+        if not isinstance(company, dict):
+            continue
+
+        file_key = st.session_state.get(f"{prefix}_file_key", "default")
+        key_suffix = re.sub(r"[^a-zA-Z0-9_]", "_", str(file_key))
+
+        raw_values = company.get("values", {})
+        if not isinstance(raw_values, dict):
+            raw_values = {}
+        clean_values = {}
+        for metric in METRICS:
+            try:
+                clean_values[metric] = float(raw_values.get(metric, 0.0))
+            except (TypeError, ValueError):
+                clean_values[metric] = 0.0
+
+        st.session_state[f"{prefix}_values"] = clean_values
+        for metric in METRICS:
+            st.session_state[f"widget_{prefix}_{metric}_{key_suffix}"] = clean_values[metric]
+
+        name = str(company.get("company_name", "")).strip()
+        if name:
+            st.session_state[f"{prefix}_company_name"] = name
+            st.session_state[f"widget_{prefix}_company_name_{key_suffix}"] = name
 
 
 RATIO_CATEGORIES = ["Liquidity", "Profitability", "Efficiency", "Leverage", "Returns"]
@@ -996,6 +1105,34 @@ def render_company_name_field(prefix):
     st.caption("Auto-filled from the uploaded file's name — edit if you'd like it to read differently.")
 
 
+def render_pdf_preview(prefix):
+    """When the file behind this company's figures is a PDF, offers a
+    collapsed, in-browser preview of the original document right next to
+    the fields it was extracted into — so a user checking a figure that
+    looks off can see the source page instead of having to reopen the
+    file separately. Renders nothing at all for Excel/CSV uploads or the
+    bundled sample data, where there's no PDF to show."""
+    if not st.session_state.get(f"{prefix}_is_pdf"):
+        return
+    pdf_bytes = st.session_state.get(f"{prefix}_pdf_bytes")
+    if not pdf_bytes:
+        return
+    with st.expander("📄 View original PDF (compare figures against the source)"):
+        b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        st.markdown(
+            f"""
+            <iframe src="data:application/pdf;base64,{b64}"
+                    width="100%" height="600" style="border:1px solid {BORDER}; border-radius:6px;">
+            </iframe>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "If the preview above doesn't render (some browsers block "
+            "embedded PDFs), re-open the file you uploaded directly."
+        )
+
+
 def render_data_quality_summary(prefix):
     """A consolidated "Data Quality Check" scorecard, sitting above the
     per-field review below: how many of the 15 figures were detected
@@ -1112,6 +1249,7 @@ def render_data_review(prefix, title):
         st.caption(f"Source column: **{meta.get('value_column', '?')}**{years_note}")
 
     render_data_quality_summary(prefix)
+    render_pdf_preview(prefix)
 
     values = st.session_state[f"{prefix}_values"]
     # Widget keys include the current file identity so that uploading a new
@@ -1165,6 +1303,62 @@ def render_data_review(prefix, title):
     st.session_state[f"{prefix}_values"] = values
 
 
+# ---------- Save / restore session ----------
+# A plain browser refresh (or an accidental click that reruns the app)
+# resets everything typed in manually, since Streamlit's session state
+# doesn't survive a refresh — this is a real risk for anyone who's just
+# spent several minutes correcting figures by hand. The restore side has
+# to run here, before any of the widgets it can touch (the currency
+# selector below, and every number/text field on the Home page) have
+# been created in this script run — see apply_session_restore()'s
+# docstring for why the ordering matters.
+_session_expander = st.sidebar.expander("💾 Save / restore your session")
+with _session_expander:
+    st.caption(
+        "A browser refresh resets anything typed in manually. Download a "
+        "snapshot before making a lot of edits, then restore it here if "
+        "that happens — no need to re-enter everything from scratch."
+    )
+    _restore_file = st.file_uploader(
+        "Restore a saved session (.json)",
+        type=["json"],
+        key="session_restore_uploader",
+    )
+
+if _restore_file is not None:
+    _restore_id = f"{_restore_file.name}:{_restore_file.size}"
+    if st.session_state.get("_session_restore_applied") != _restore_id:
+        try:
+            _payload = json.loads(_restore_file.getvalue().decode("utf-8"))
+            apply_session_restore(_payload)
+            st.session_state["_session_restore_applied"] = _restore_id
+            st.session_state["_session_restore_error"] = None
+            st.session_state["_session_restore_success"] = True
+            st.rerun()
+        except Exception as e:
+            st.session_state["_session_restore_error"] = str(e)
+
+if st.session_state.get("_session_restore_success"):
+    with _session_expander:
+        styled_note("Session restored from your saved file.", "good")
+    st.session_state["_session_restore_success"] = False
+if st.session_state.get("_session_restore_error"):
+    with _session_expander:
+        styled_note(
+            f"Couldn't restore that file: {st.session_state['_session_restore_error']}",
+            "warning",
+        )
+
+_currency_choice = st.sidebar.selectbox(
+    "Currency",
+    options=list(CURRENCY_OPTIONS.keys()),
+    key="currency_choice",
+    help="Changes the symbol shown throughout the app and PDF report. "
+         "This relabels figures — it doesn't convert amounts between "
+         "currencies, since that would need live exchange rates.",
+)
+st.session_state["currency_symbol"] = CURRENCY_OPTIONS[_currency_choice]
+
 uploaded_file_a = st.sidebar.file_uploader(
     "Upload Company A file",
     type=["xlsx", "xls", "csv", "pdf"],
@@ -1200,6 +1394,16 @@ company_a = company_values("a")
 company_b = company_values("b")
 company_name_a = st.session_state.get("a_company_name") or "Company A"
 company_name_b = st.session_state.get("b_company_name") or "Company B"
+
+with _session_expander:
+    st.download_button(
+        "Download session snapshot",
+        data=json.dumps(build_session_snapshot(), indent=2),
+        file_name="fra_session_backup.json",
+        mime="application/json",
+        help="Saves both companies' figures, names, and currency choice "
+             "to a small file you can restore from above later.",
+    )
 
 # ---------- Company A ----------
 revenue = company_a["revenue"]
@@ -1270,11 +1474,12 @@ def generate_pdf():
     np_margin = net_profit_margin(net_profit, revenue)
     inv_turnover = inventory_turnover(cost_of_sales, inventory)
 
-    liquidity_msg, liquidity_detail, liquidity_sev = liquidity_analysis(curr_ratio)
-    debt_msg, debt_detail, debt_sev = debt_analysis(de_ratio)
-    profitability_msg, profitability_detail, profitability_sev = profitability_analysis(np_margin)
-    roe_msg, roe_detail, roe_sev = roe_analysis(roe)
-    gross_margin_msg, gross_margin_detail, gross_margin_sev = gross_margin_analysis(gp_margin)
+    _pdf_currency = get_currency_symbol()
+    liquidity_msg, liquidity_detail, liquidity_sev = liquidity_analysis(curr_ratio, currency=_pdf_currency)
+    debt_msg, debt_detail, debt_sev = debt_analysis(de_ratio, currency=_pdf_currency)
+    profitability_msg, profitability_detail, profitability_sev = profitability_analysis(np_margin, currency=_pdf_currency)
+    roe_msg, roe_detail, roe_sev = roe_analysis(roe, currency=_pdf_currency)
+    gross_margin_msg, gross_margin_detail, gross_margin_sev = gross_margin_analysis(gp_margin, currency=_pdf_currency)
 
     net_profit_word = "net profit" if net_profit >= 0 else "net loss"
     net_profit_verb = "achieved" if net_profit >= 0 else "recorded"
@@ -1687,7 +1892,7 @@ def generate_pdf():
         width=0.55
     )
     ax1.set_title("Financial Performance", fontsize=13, fontweight="bold", color=NAVY_HEX)
-    ax1.set_ylabel("Amount (£)")
+    ax1.set_ylabel(f"Amount ({_pdf_currency})")
     ax1.yaxis.set_major_formatter(money_formatter)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
@@ -1714,7 +1919,7 @@ def generate_pdf():
         width=0.45
     )
     ax2.set_title("Assets vs Liabilities", fontsize=13, fontweight="bold", color=NAVY_HEX)
-    ax2.set_ylabel("Amount (£)")
+    ax2.set_ylabel(f"Amount ({_pdf_currency})")
     ax2.yaxis.set_major_formatter(money_formatter)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
@@ -2008,11 +2213,12 @@ elif page == "Ratio Analysis":
 
     st.subheader("Overall Financial Position")
 
-    render_insight(liquidity_analysis(curr_ratio))
-    render_insight(profitability_analysis(np_margin))
+    _display_currency = get_currency_symbol()
+    render_insight(liquidity_analysis(curr_ratio, currency=_display_currency))
+    render_insight(profitability_analysis(np_margin, currency=_display_currency))
     render_insight(efficiency_analysis(inv_turnover))
-    render_insight(debt_analysis(de_ratio))
-    render_insight(roe_analysis(roe))
+    render_insight(debt_analysis(de_ratio, currency=_display_currency))
+    render_insight(roe_analysis(roe, currency=_display_currency))
 
     st.divider()
 
@@ -2040,7 +2246,20 @@ elif page == "Ratio Analysis":
             emoji, phrase, _sev = interpret_ratio(mkey, raw)
             cat_rows.append((label, value, f"{emoji} {phrase}"))
         cat_df = pd.DataFrame(cat_rows, columns=["Ratio", company_name_a, "Read"])
-        st.dataframe(cat_df, hide_index=True, width="stretch")
+        st.dataframe(
+            cat_df,
+            hide_index=True,
+            width="stretch",
+            # "Read" phrases (e.g. "Collects receivables quickly") were
+            # getting silently truncated with "..." on narrow/mobile
+            # screens where the column defaults to a tight auto-fit width.
+            # Widening it explicitly means the table scrolls horizontally
+            # on a phone instead of cutting the text off unreadably.
+            column_config={
+                "Ratio": st.column_config.TextColumn(width="medium"),
+                "Read": st.column_config.TextColumn(width="large"),
+            },
+        )
 
     st.divider()
 
@@ -2073,7 +2292,18 @@ elif page == "Ratio Analysis":
             trend_rows,
             columns=["Ratio"] + [str(y) for y in years_a] + ["Trend"],
         )
-        st.dataframe(trend_df, hide_index=True, width="stretch")
+        st.dataframe(
+            trend_df,
+            hide_index=True,
+            width="stretch",
+            # Same mobile-truncation fix as the Full Ratio Breakdown table
+            # above — "Trend" phrases like "📈 Improving" were getting cut
+            # off on narrow screens.
+            column_config={
+                "Ratio": st.column_config.TextColumn(width="medium"),
+                "Trend": st.column_config.TextColumn(width="medium"),
+            },
+        )
         st.divider()
     elif not is_sample_data("a"):
         styled_note(

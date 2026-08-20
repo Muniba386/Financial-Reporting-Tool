@@ -30,48 +30,74 @@ import pandas as pd
 METRIC_SYNONYMS = {
     "revenue": [
         "revenue", "total revenue", "sales", "turnover", "net sales",
-        "total sales", "sales revenue", "income from operations"
+        "total sales", "sales revenue", "income from operations",
+        # Added to cover common real-world nomenclature beyond the
+        # original set — e.g. "Turnover" and "Sales Revenue" already
+        # matched, but a report calling the same line "Gross Billings" or
+        # "Total Income" previously fell through to a manual entry.
+        "gross billings", "billings", "total income", "operating revenue",
+        "operating income", "revenues", "net revenue", "net sales revenue",
+        "group revenue", "revenue from operations",
+        "revenue from contracts with customers"
     ],
     "cost_of_sales": [
         "cost of sales", "cost of goods sold", "cogs", "cost of revenue",
         "cost of sales and services", "total cost of revenue",
-        "total cost of sales"
+        "total cost of sales", "cost of goods", "direct costs",
+        "cost of products sold", "cost of merchandise sold",
+        "trading costs"
     ],
     "gross_profit": [
-        "gross profit", "gross income", "gross margin"
+        "gross profit", "gross income", "gross margin", "gross earnings",
+        "gross profit for the year"
     ],
     "operating_profit": [
         "operating profit", "ebit", "profit from operations",
         "operating income", "earnings before interest and tax",
-        "operating profit for the year"
+        "operating profit for the year", "operating earnings",
+        "trading profit", "results from operating activities",
+        "income from operations before tax"
     ],
     "net_profit": [
         "net profit", "net income", "profit for the year",
         "profit after tax", "net earnings", "profit for the period",
         "profit attributable to owners", "net profit for the year",
-        "profit/loss for the year"
+        "profit/loss for the year", "net income for the year",
+        "comprehensive income", "total comprehensive income",
+        "profit for the financial year", "earnings for the year",
+        "net earnings for the year", "profit"
     ],
     "interest_expense": [
         "interest expense", "finance costs", "finance cost",
-        "interest payable", "finance expense", "interest paid"
+        "interest payable", "finance expense", "interest paid",
+        "interest costs", "net finance costs", "borrowing costs",
+        "interest and similar charges"
     ],
     "inventory": [
-        "inventory", "inventories", "stock", "closing stock", "stocks"
+        "inventory", "inventories", "stock", "closing stock", "stocks",
+        "merchandise inventory", "raw materials and stock",
+        "stock and work in progress", "inventories and work in progress"
     ],
     "accounts_receivable": [
         "accounts receivable", "trade receivables", "debtors",
-        "trade debtors", "receivables", "trade and other receivables"
+        "trade debtors", "receivables", "trade and other receivables",
+        "sundry debtors", "receivables from customers",
+        "trade accounts receivable", "amounts owed by customers"
     ],
     "cash": [
         "cash", "cash and cash equivalents", "cash and bank",
-        "cash at bank", "bank and cash", "cash at bank and in hand"
+        "cash at bank", "bank and cash", "cash at bank and in hand",
+        "cash on hand", "cash and short term investments",
+        "cash and equivalents", "cash & cash equivalents"
     ],
     "current_assets": [
         "current assets", "total current assets"
     ],
     "accounts_payable": [
         "accounts payable", "trade payables", "creditors",
-        "trade creditors", "payables", "trade and other payables"
+        "trade creditors", "payables", "trade and other payables",
+        "sundry creditors", "trade accounts payable",
+        "amounts owed to suppliers"
     ],
     "current_liabilities": [
         "current liabilities", "total current liabilities"
@@ -83,13 +109,16 @@ METRIC_SYNONYMS = {
         "total debt", "total liabilities", "total borrowings",
         "borrowings", "long term debt", "long-term debt", "total loans",
         "long term loans", "long-term loans", "loans", "bank loans",
-        "total liabilities and debt"
+        "total liabilities and debt", "net debt",
+        "interest bearing debt", "interest-bearing loans and borrowings"
     ],
     "equity": [
         "equity", "total equity", "shareholders equity",
         "shareholders' equity", "stockholders equity", "net assets",
         "total shareholders funds", "shareholders funds",
-        "total equity attributable to owners"
+        "total equity attributable to owners", "owners equity",
+        "members equity", "total members equity", "capital and reserves",
+        "total capital and reserves", "stockholders' equity"
     ],
 }
 
@@ -334,6 +363,7 @@ def _merge_extractions(results):
     source, the higher-confidence match wins."""
     combined_values = {}
     combined_match_info = {}
+    combined_trend = {}
     sources_used = []
     label_col_display = value_col_display = detected_year = None
     available_years = []
@@ -353,6 +383,10 @@ def _merge_extractions(results):
             if metric not in combined_values or new_conf > existing_conf:
                 combined_values[metric] = val
                 combined_match_info[metric] = meta["match_info"][metric]
+                # Trend data follows whichever source just won this metric,
+                # so the multi-year series always lines up with the same
+                # sheet/table the single-year figure came from.
+                combined_trend[metric] = meta.get("values_by_year", {}).get(metric, {})
 
     meta = {
         "label_column": label_col_display,
@@ -361,6 +395,7 @@ def _merge_extractions(results):
         "available_years": available_years,
         "match_info": combined_match_info,
         "sources_combined": sources_used,
+        "values_by_year": combined_trend,
     }
     return combined_values, meta
 
@@ -446,6 +481,32 @@ def extract_from_dataframe(df, preferred_year=None):
             "confidence": 1.0,
         }
 
+    # Trend data: for every matched metric, also read its value from every
+    # OTHER year-labelled column on the same row (not just chosen_col) —
+    # this is additive to the single-year `values` used everywhere today
+    # and only feeds the separate trend-analysis view, so it can't change
+    # any existing figure/behaviour. A professional statement's Income
+    # Statement sheet commonly carries 2-3 years side by side, which is
+    # exactly what this is meant to capture.
+    values_by_year = {}
+    for metric, (row_idx, score) in assigned.items():
+        year_vals = {}
+        for col, yr in year_cols:
+            num = _to_number(df.iloc[row_idx][col])
+            if num is not None:
+                year_vals[yr] = num
+        if year_vals:
+            values_by_year[metric] = year_vals
+
+    if "gross_profit" not in values_by_year and "revenue" in values_by_year and "cost_of_sales" in values_by_year:
+        gp_years = {
+            yr: rev - values_by_year["cost_of_sales"][yr]
+            for yr, rev in values_by_year["revenue"].items()
+            if yr in values_by_year["cost_of_sales"]
+        }
+        if gp_years:
+            values_by_year["gross_profit"] = gp_years
+
     # A structurally valid table (we found a label column and a value
     # column) can still fail to match anything useful — e.g. a table that
     # simply isn't a financial statement. Rather than silently showing a
@@ -457,6 +518,7 @@ def extract_from_dataframe(df, preferred_year=None):
         "detected_year": detected_year,
         "available_years": [y for _, y in year_cols],
         "match_info": match_info,
+        "values_by_year": values_by_year,
     }
     _finalize_meta(meta, values)
     return values, meta
