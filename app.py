@@ -1459,20 +1459,24 @@ def generate_pdf():
 
     report_company = company_name_a or "Company A"
     detected_year_a = (st.session_state.get("a_meta") or {}).get("detected_year")
-    period_label = f"Financial Year {detected_year_a}" if detected_year_a else "the latest available period"
+    period_label = f"the financial year ended {detected_year_a}" if detected_year_a else "the latest period available"
+    period_label_short = f"FY{detected_year_a}" if detected_year_a else "the latest available period"
     a_is_sample = is_sample_data("a")
     b_is_real = not is_sample_data("b")
 
     # Computed up front so both the narrative paragraphs and the summary
-    # table can react to the company's actual figures — a loss-making or
+    # table can react to the company's actual figures. A loss-making or
     # highly-geared company must not read back the same "healthy, moderate
     # risk" language a strong one would get.
     curr_ratio = current_ratio(current_assets, current_liabilities)
+    qk_ratio = quick_ratio(current_assets, inventory, current_liabilities)
     de_ratio = debt_to_equity(total_debt, equity)
     roe = return_on_equity(net_profit, equity)
     gp_margin = gross_profit_margin(gross_profit, revenue)
+    op_margin = operating_profit_margin(operating_profit, revenue)
     np_margin = net_profit_margin(net_profit, revenue)
     inv_turnover = inventory_turnover(cost_of_sales, inventory)
+    wc = working_capital(current_assets, current_liabilities)
 
     _pdf_currency = get_currency_symbol()
     liquidity_msg, liquidity_detail, liquidity_sev = liquidity_analysis(curr_ratio, currency=_pdf_currency)
@@ -1480,18 +1484,47 @@ def generate_pdf():
     profitability_msg, profitability_detail, profitability_sev = profitability_analysis(np_margin, currency=_pdf_currency)
     roe_msg, roe_detail, roe_sev = roe_analysis(roe, currency=_pdf_currency)
     gross_margin_msg, gross_margin_detail, gross_margin_sev = gross_margin_analysis(gp_margin, currency=_pdf_currency)
+    inv_msg, inv_detail, inv_sev = efficiency_analysis(inv_turnover)
 
     net_profit_word = "net profit" if net_profit >= 0 else "net loss"
-    net_profit_verb = "achieved" if net_profit >= 0 else "recorded"
+    net_profit_verb = "reported" if net_profit >= 0 else "reported"
+    gross_profit_word = "gross profit" if gross_profit >= 0 else "gross loss"
+    wc_word = "positive working capital" if wc >= 0 else "a working capital deficit"
 
     title_style = ParagraphStyle(
         "MyTitle",
         parent=styles["Title"],
         fontName="Helvetica-Bold",
-        fontSize=28,
-        leading=34,
+        fontSize=26,
+        leading=32,
         alignment=1,
         textColor=BRAND_NAVY
+    )
+    cover_company_style = ParagraphStyle(
+        "CoverCompany",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=19,
+        leading=24,
+        alignment=1,
+        textColor=BRAND_GOLD,
+        spaceBefore=6,
+    )
+    cover_meta_style = ParagraphStyle(
+        "CoverMeta",
+        parent=styles["Normal"],
+        fontSize=10.5,
+        leading=16,
+        alignment=1,
+        textColor=colors.HexColor("#3A342A"),
+    )
+    cover_label_style = ParagraphStyle(
+        "CoverLabel",
+        parent=styles["Normal"],
+        fontSize=8.5,
+        leading=12,
+        alignment=1,
+        textColor=BRAND_GOLD,
     )
 
     styles["Title"].alignment = TA_LEFT
@@ -1501,302 +1534,321 @@ def generate_pdf():
     styles["Heading2"].alignment = TA_LEFT
     styles["Heading2"].textColor = BRAND_NAVY
 
-    story = []
-    story.append(
-        Paragraph(
-            "<b>Financial Ratio Analysis Report</b>",
-            title_style
-        )
-    )
     from reportlab.graphics.shapes import Drawing, Line
 
-    line = Drawing(450, 10)
-    gold_line = Line(0, 5, 450, 5)
-    gold_line.strokeColor = BRAND_GOLD
-    gold_line.strokeWidth = 2
-    line.add(gold_line)
+    def gold_rule(width=450, weight=2):
+        d = Drawing(width, 10)
+        ln = Line(0, 5, width, 5)
+        ln.strokeColor = BRAND_GOLD
+        ln.strokeWidth = weight
+        d.add(ln)
+        return d
 
-    story.append(line)
-    story.append(Spacer(1, 25))
-    story.append(Spacer(1, 80))
+    # ---------------- Cover page ----------------
+    # A formal title page in the style of a professional financial
+    # analysis report: report title, prepared-for company, reporting
+    # period and date of issue, followed by the required disclaimers.
+    # No individual "prepared by" name is invented here, since this same
+    # report generator is used to produce reports for whichever company
+    # is currently loaded, not only for one specific analyst.
 
-    story.append(
-        Paragraph(
-            f"<b>Company:</b> {report_company}",
-            styles["Normal"]
-        )
-    )
+    story = []
+    story.append(Spacer(1, 70))
+    story.append(Paragraph("<b>FINANCIAL RATIO ANALYSIS REPORT</b>", title_style))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("PREPARED FOR", cover_label_style))
+    story.append(Paragraph(report_company, cover_company_style))
+    story.append(Spacer(1, 18))
 
-    story.append(
-        Paragraph(
-            f"<b>Report Period:</b> {period_label}",
-            styles["Normal"]
-        )
-    )
+    center_rule = gold_rule(width=200, weight=1.3)
+    center_rule.hAlign = "CENTER"
+    story.append(center_rule)
+    story.append(Spacer(1, 18))
 
-    story.append(
-        Paragraph(
-            f"<b>Date:</b> {datetime.now().strftime('%d %B %Y')}",
-            styles["Normal"]
-        )
-    )
+    story.append(Paragraph(f"Reporting period: {period_label_short}", cover_meta_style))
+    story.append(Paragraph(f"Date of issue: {datetime.now().strftime('%d %B %Y')}", cover_meta_style))
+    story.append(Paragraph("Prepared using the Financial Ratio Analysis Tool", cover_meta_style))
+
+    story.append(Spacer(1, 60))
 
     if a_is_sample:
-        story.append(Spacer(1, 10))
         story.append(
             Paragraph(
-                "<i>Note: this report was generated from sample/demo data — "
-                "upload a real file in the app to produce an actual analysis.</i>",
-                styles["Normal"]
+                "<i>Note: this report has been generated from illustrative sample data. "
+                "Upload a company's financial statements in the application to produce "
+                "an analysis of actual figures.</i>",
+                ParagraphStyle("SampleNote", parent=styles["Normal"], fontSize=9, alignment=1,
+                                textColor=colors.HexColor("#6E6759")),
             )
         )
+        story.append(Spacer(1, 10))
 
-    story.append(Spacer(1, 10))
     story.append(
         Paragraph(
-            "<i>This report is generated automatically from the figures provided and is "
-            "intended for illustrative and educational purposes. It does not constitute "
-            "professional accounting, audit, or investment advice — please consult a "
-            "qualified accountant before making financial decisions.</i>",
-            ParagraphStyle("Disclaimer", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#6E6759")),
+            "<i>This document is confidential and has been prepared for the sole use of "
+            "the addressee named above and its stakeholders. It should not be "
+            "distributed to any other party without prior consent.</i>",
+            ParagraphStyle("Confidential", parent=styles["Normal"], fontSize=8.5, alignment=1,
+                            textColor=colors.HexColor("#6E6759")),
+        )
+    )
+    story.append(Spacer(1, 8))
+    story.append(
+        Paragraph(
+            "<i>This report has been generated automatically from the figures provided "
+            "and is intended for illustrative and educational purposes. It does not "
+            "constitute professional accounting, audit or investment advice. A qualified "
+            "accountant should be consulted before any financial decision is made on the "
+            "basis of this report.</i>",
+            ParagraphStyle("Disclaimer", parent=styles["Normal"], fontSize=8.5, alignment=1,
+                            textColor=colors.HexColor("#6E6759")),
         )
     )
 
     story.append(PageBreak())
 
-    story.append(
-        Paragraph(
-            "<b>Financial Ratio Analysis Report</b>",
-            styles["Title"]
-        )
-    )
-    story.append(
-        Paragraph(
-            f"{report_company} · Generated on: {datetime.now().strftime('%d %B %Y')}",
-            styles["Normal"]
-        )
-    )
+    # ---------------- Executive summary ----------------
+
+    story.append(Paragraph("<b>Financial Ratio Analysis Report</b>", styles["Title"]))
+    story.append(Paragraph(f"{report_company}, prepared {datetime.now().strftime('%d %B %Y')}", styles["Normal"]))
     story.append(Spacer(1, 25))
 
-    story.append(
-        Paragraph(
-            "<b>Executive Summary</b>",
-            styles["Heading1"]
-        )
-    )
+    story.append(Paragraph("<b>Executive Summary</b>", styles["Heading1"]))
 
     story.append(
         Paragraph(
             f"""
-            This report presents a financial analysis of {report_company}'s financial
-            performance based on {period_label if detected_year_a else 'its most recent'} financial statements.
-
-            {report_company} generated revenue of {money_fmt(revenue)} and {net_profit_verb} a {net_profit_word}
-            of {money_fmt(abs(net_profit))}. Liquidity, profitability and leverage ratios have
-            been calculated to evaluate the company's overall financial health and
-            operational efficiency.
+            This report sets out a ratio-based analysis of {report_company}'s financial
+            performance and financial position for {period_label}, prepared from the
+            figures entered into the application and reviewed by the user prior to
+            calculation.
+            """,
+            styles["BodyText"]
+        )
+    )
+    story.append(Spacer(1, 8))
+    story.append(
+        Paragraph(
+            f"""
+            For the period under review, {report_company} recorded revenue of
+            {money_fmt(revenue)} and {net_profit_verb} a {net_profit_word} of
+            {money_fmt(abs(net_profit))}, equivalent to a net profit margin of
+            {format_ratio(np_margin, suffix='%')}. The company held {wc_word} of
+            {money_fmt(abs(wc))} at the period end. Measures of liquidity, profitability,
+            efficiency, gearing and return on capital have been calculated below to
+            assess the company's overall financial health and operational performance.
             """,
             styles["BodyText"]
         )
     )
     story.append(Spacer(1, 20))
 
+    # ---------------- Financial observations ----------------
+
+    story.append(Paragraph("<b>Financial Observations</b>", styles["Heading1"]))
     story.append(
         Paragraph(
-            "<b>Financial Observations</b>",
-            styles["Heading1"]
-        )
-    )
-    story.append(
-        Paragraph(
-            "<i>These are observations based on the ratios calculated below, not "
-            "recommendations — a ratio in isolation doesn't establish whether a "
-            "company is performing well without also knowing its industry, "
-            "strategy and stage of growth. They're best read alongside sector "
-            "norms and the company's own trend over time.</i>",
+            "<i>The points below are observations drawn from the ratios calculated in "
+            "this report, not recommendations. A ratio taken in isolation does not "
+            "establish whether a company is performing well without also having regard "
+            "to its industry, strategy and stage of growth. They are best read alongside "
+            "sector norms and the company's own trend over time.</i>",
             ParagraphStyle("ObsNote", parent=styles["Normal"], fontSize=8.5, textColor=colors.HexColor("#6E6759")),
         )
     )
     story.append(Spacer(1, 8))
 
-    # Built from the company's actual severities rather than a fixed list —
-    # a company already doing well on a measure gets different wording from
-    # one that's more stretched on it, and a company that's simply missing
-    # the data gets told so. Phrased as observations ("current liabilities
-    # exceed current assets") rather than instructions ("you should..."),
-    # since prescribing action without knowing the company's context would
-    # overstate what a ratio calculation alone can tell you.
-    recommendations = []
+    # Built from the company's actual severities rather than a fixed list.
+    # A company already performing well on a measure gets different wording
+    # from one that is more stretched on it, and a company that is simply
+    # missing the data is told so. Phrased as observations ("current
+    # liabilities exceed current assets") rather than instructions ("you
+    # should..."), since prescribing action without knowing the company's
+    # context would overstate what a ratio calculation alone can tell you.
+    observations = []
     if liquidity_sev in ("bad", "medium"):
-        recommendations.append(
-            "Current liabilities are close to or exceeding current assets, which "
-            "can indicate short-term cash-flow pressure — worth reviewing "
-            "alongside the trend over recent periods and typical levels for the "
-            "sector."
+        observations.append(
+            "Current liabilities are close to, or exceed, current assets, which may "
+            "indicate pressure on short-term cash flow. This is worth reviewing "
+            "alongside the trend over recent periods and typical levels for the sector."
             if liquidity_sev == "bad" else
-            "The current ratio is adequate but has limited headroom above 1, "
-            "leaving relatively little buffer if short-term obligations rise."
+            "The current ratio is adequate but has limited headroom above 1.00, "
+            "leaving comparatively little buffer should short-term obligations increase."
         )
     elif liquidity_sev == "good":
-        recommendations.append(
-            "The current ratio suggests a comfortable short-term liquidity "
-            "position, consistent with the figures reviewed."
+        observations.append(
+            "The current ratio indicates a sound short-term liquidity position, "
+            "consistent with the figures reviewed."
         )
 
     if profitability_sev in ("bad", "medium"):
-        recommendations.append(
-            "Net profit margin is comparatively low relative to typical "
-            "benchmarks, which may reflect cost structure, pricing, or the "
-            "nature of the sector — worth comparing against industry peers "
-            "rather than in isolation."
+        observations.append(
+            "Net profit margin is comparatively low relative to typical benchmarks, "
+            "which may reflect the cost structure, pricing policy or nature of the "
+            "sector. This is best assessed by comparison with industry peers rather "
+            "than in isolation."
             if profitability_sev == "bad" else
-            "Net profit margin is moderate; whether there's room for further "
-            "efficiency gains would depend on how it compares with sector peers."
+            "Net profit margin is satisfactory. Whether there is scope for further "
+            "efficiency gains would depend on comparison with sector peers."
         )
     elif profitability_sev == "good":
-        recommendations.append(
-            "Net profit margin is strong relative to typical benchmarks, "
-            "though sustaining it will depend on factors outside these figures."
+        observations.append(
+            "Net profit margin is strong relative to typical benchmarks, although "
+            "sustaining it will depend on factors outside the scope of these figures."
         )
 
     if debt_sev in ("bad", "medium"):
-        recommendations.append(
-            "Debt is elevated relative to equity, which increases financial "
-            "risk if profits or interest rates move unfavourably — though "
-            "capital-intensive sectors often carry materially higher gearing "
-            "as standard practice."
+        observations.append(
+            "Gearing is elevated relative to equity, which increases financial risk "
+            "should profitability or interest rates move unfavourably, although "
+            "capital-intensive sectors often carry materially higher gearing as "
+            "standard practice."
             if debt_sev == "bad" else
-            "Leverage is moderate; worth monitoring as the business grows, "
-            "particularly against sector norms."
+            "Gearing is moderate and warrants monitoring as the business grows, "
+            "particularly with reference to sector norms."
         )
     elif debt_sev == "good":
-        recommendations.append(
-            "Leverage is conservative relative to equity, generally "
+        observations.append(
+            "Gearing is conservative relative to equity, which is generally "
             "associated with lower financial risk."
         )
 
     if roe_sev in ("bad", "medium"):
-        recommendations.append(
-            "Return on equity is below typical benchmarks, which may reflect "
-            "the business's stage, sector, or current performance — best read "
-            "alongside profitability and leverage together rather than alone."
+        observations.append(
+            "Return on equity is below typical benchmarks, which may reflect the "
+            "company's stage, sector or current trading performance. This is best "
+            "read alongside profitability and gearing together rather than alone."
             if roe_sev == "bad" else
             "Return on equity is moderate relative to typical benchmarks."
         )
     elif roe_sev == "good":
-        recommendations.append(
-            "Return on equity is strong relative to typical benchmarks, though "
-            "it's worth weighing against the leverage used to achieve it."
+        observations.append(
+            "Return on equity is strong relative to typical benchmarks, although it "
+            "should be weighed against the gearing employed to achieve it."
         )
 
-    if not recommendations:
-        recommendations.append(
-            "No specific figures were available to base an observation on — "
-            "upload a complete set of financial statements for a fuller analysis."
+    if not observations:
+        observations.append(
+            "Insufficient figures were available to base an observation on. A more "
+            "complete set of financial statements would allow for a fuller analysis."
         )
 
     story.append(
         Paragraph(
-            "<br/>".join(f"• {r}" for r in recommendations),
+            "<br/>".join(f"&bull; {o}" for o in observations),
             styles["BodyText"]
         )
     )
     story.append(Spacer(1, 20))
 
+    # ---------------- Review of financial performance ----------------
+    # Written as a continuous analyst narrative through the Income
+    # Statement, in the order revenue, cost of sales, gross profit,
+    # operating profit and net profit, rather than as a bare list of
+    # figures, matching how a financial performance review is
+    # conventionally structured.
+
+    story.append(Paragraph("<b>Review of Financial Performance</b>", styles["Heading1"]))
     story.append(
         Paragraph(
-            "<b>Detailed Financial Analysis</b>",
-            styles["Heading1"]
-        )
-    )
-
-    story.append(
-        Paragraph(
-            f"<b>Revenue:</b> The company generated total revenue of {money_fmt(revenue)} during the financial year, indicating the overall level of business activity.",
-            styles["BodyText"]
-        )
-    )
-
-    story.append(Spacer(1, 8))
-
-    story.append(
-        Paragraph(
-            f"<b>Gross Profit:</b> {'Gross profit amounted to' if gross_profit >= 0 else 'The company recorded a gross loss of'} {money_fmt(abs(gross_profit))}"
-            f"{', demonstrating the company’s ability to generate profit after direct production costs.' if gross_profit >= 0 else ' — cost of sales exceeded revenue for the period.'}",
-            styles["BodyText"]
-        )
-    )
-
-    story.append(Spacer(1, 8))
-
-    story.append(
-        Paragraph(
-            f"<b>Net Profit:</b> The company {net_profit_verb} a {net_profit_word} of {money_fmt(abs(net_profit))}, "
-            f"{'showing its profitability' if net_profit >= 0 else 'reflecting the shortfall'} after all operating expenses, interest and taxes.",
-            styles["BodyText"]
-        )
-    )
-
-    story.append(Spacer(1, 8))
-
-    story.append(
-        Paragraph(
-            f"<b>Current Ratio ({format_ratio(curr_ratio)}):</b> {liquidity_msg}. "
-            "A current ratio above 1 means current assets exceed current liabilities; "
-            "below 1 means they don't, which can signal difficulty meeting short-term obligations.",
-            styles["BodyText"]
-        )
-    )
-
-    story.append(Spacer(1, 8))
-
-    story.append(
-        Paragraph(
-            f"<b>Debt-to-Equity Ratio ({format_ratio(de_ratio)}):</b> This ratio measures financial leverage — "
-            f"total debt relative to shareholders' equity. {debt_msg}.",
-            styles["BodyText"]
-        )
-    )
-
-    story.append(Spacer(1, 8))
-
-    story.append(
-        Paragraph(
-            f"<b>Return on Equity ({format_ratio(roe, suffix='%')}):</b> This ratio measures how effectively the company generates profit from shareholders' investment. A higher percentage indicates stronger financial performance.",
+            f"""
+            {report_company} generated revenue of {money_fmt(revenue)} during {period_label}.
+            Cost of sales of {money_fmt(cost_of_sales)} resulted in a {gross_profit_word} of
+            {money_fmt(abs(gross_profit))}, representing a gross margin of
+            {format_ratio(gp_margin, suffix='%')}. After deduction of operating expenses,
+            the company reported an operating profit of {money_fmt(operating_profit)},
+            equivalent to an operating margin of {format_ratio(op_margin, suffix='%')}.
+            Following finance costs of {money_fmt(interest_expense)} and taxation, the
+            company {net_profit_verb} a {net_profit_word} of {money_fmt(abs(net_profit))}
+            for the period, a net profit margin of {format_ratio(np_margin, suffix='%')}.
+            """,
             styles["BodyText"]
         )
     )
     story.append(Spacer(1, 20))
+
+    # ---------------- Review of financial position ----------------
+
+    story.append(Paragraph("<b>Review of Financial Position</b>", styles["Heading1"]))
     story.append(
         Paragraph(
-            "<b>Financial Ratios</b>",
-            styles["Heading2"]
+            f"""
+            At the period end, {report_company} held current assets of
+            {money_fmt(current_assets)} against current liabilities of
+            {money_fmt(current_liabilities)}, resulting in {wc_word} of
+            {money_fmt(abs(wc))} and a current ratio of {format_ratio(curr_ratio)}.
+            Excluding inventory, the quick (acid-test) ratio stands at
+            {format_ratio(qk_ratio)}. Total assets of {money_fmt(total_assets)} were
+            financed by total debt of {money_fmt(total_debt)} and shareholders' equity
+            of {money_fmt(equity)}, giving a gearing (debt-to-equity) ratio of
+            {format_ratio(de_ratio)} and a return on equity of
+            {format_ratio(roe, suffix='%')} for the period.
+            """,
+            styles["BodyText"]
         )
     )
+    story.append(Spacer(1, 20))
 
+    # ---------------- Ratio analysis by category ----------------
+    # Grouped under the same five categories used throughout the
+    # application (Liquidity, Profitability, Efficiency, Leverage,
+    # Returns), each introduced by a short definition before the
+    # company-specific finding, so the report explains the accounting
+    # logic behind a ratio and not only its resulting value.
+
+    story.append(Paragraph("<b>Ratio Analysis</b>", styles["Heading1"]))
+
+    story.append(Paragraph("<b>Liquidity</b>", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            f"The current ratio measures a company's ability to meet its short-term "
+            f"obligations as they fall due, calculated by dividing current assets by "
+            f"current liabilities. {liquidity_detail}",
+            styles["BodyText"]
+        )
+    )
     story.append(Spacer(1, 10))
-    table_data = [
-        ["Metric", "Value"],
-        ["Revenue", f"{revenue:,.0f}"],
-        ["Gross Profit", f"{gross_profit:,.0f}"],
-        ["Net Profit", f"{net_profit:,.0f}"],
-        ["Current Ratio", format_ratio(curr_ratio)],
-        ["Debt to Equity", format_ratio(de_ratio)],
-        ["Return on Equity", format_ratio(roe, suffix="%")]
-    ]
 
-    table = Table(table_data, colWidths=[220, 120])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.75, colors.HexColor("#DCD3C2")),
-        ("BACKGROUND", (0, 1), (-1, -1), BRAND_SOFT),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
-    ]))
+    story.append(Paragraph("<b>Profitability</b>", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            f"Net profit margin measures the proportion of revenue retained as profit "
+            f"after all operating costs, finance costs and taxation. {profitability_detail}",
+            styles["BodyText"]
+        )
+    )
+    story.append(Spacer(1, 10))
 
-    story.append(table)
+    story.append(Paragraph("<b>Efficiency</b>", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            f"Inventory turnover measures how many times inventory is sold and replaced "
+            f"over the period, calculated by dividing cost of sales by inventory. "
+            f"{inv_detail}",
+            styles["BodyText"]
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Leverage (Gearing)</b>", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            f"The gearing, or debt-to-equity, ratio measures financial leverage: total "
+            f"debt relative to shareholders' equity. {debt_detail}",
+            styles["BodyText"]
+        )
+    )
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Returns</b>", styles["Heading2"]))
+    story.append(
+        Paragraph(
+            f"Return on equity measures how effectively a company generates profit "
+            f"from shareholders' invested capital, calculated by dividing net profit "
+            f"by shareholders' equity. {roe_detail}",
+            styles["BodyText"]
+        )
+    )
     story.append(Spacer(1, 20))
 
     # ---------------- Ratio Summary & Interpretation ----------------
@@ -1847,10 +1899,10 @@ def generate_pdf():
     story.append(Spacer(1, 6))
     story.append(
         Paragraph(
-            "Every ratio calculated from the figures provided, grouped by "
-            "category. Ratios show N/A where the underlying figures weren't "
-            "available — several are optional fields not every financial "
-            "statement reports.",
+            "The complete set of ratios calculated from the figures provided, grouped by "
+            "category. A ratio is shown as N/A where the underlying figures were not "
+            "available; several fields are optional, as not every financial statement "
+            "reports them.",
             styles["BodyText"]
         )
     )
@@ -1938,20 +1990,35 @@ def generate_pdf():
     )
     story.append(Spacer(1, 20))
 
+    # ---------------- Basis of preparation ----------------
+
+    story.append(Paragraph("<b>Basis of Preparation</b>", styles["Heading2"]))
     story.append(
         Paragraph(
-            "<b>Conclusion</b>",
-            styles["Heading1"]
+            "The figures in this report were extracted from the uploaded financial "
+            "statement using automated line-item matching, then reviewed and, where "
+            "necessary, corrected by the user before calculation. Ratios were "
+            "calculated using standard formulas, set out in full in the application's "
+            "Methodology section. No industry benchmark figures have been applied "
+            "unless entered by the user; where referenced, typical ranges reflect "
+            "general rules of thumb rather than sourced sector data, and should not "
+            "be treated as an industry average.",
+            ParagraphStyle("BasisNote", parent=styles["BodyText"], fontSize=9, textColor=colors.HexColor("#3A342A")),
         )
     )
+    story.append(Spacer(1, 20))
+
+    # ---------------- Overall assessment ----------------
+
+    story.append(Paragraph("<b>Overall Assessment</b>", styles["Heading1"]))
 
     # An accurate, data-driven summary rather than a fixed "healthy and
-    # stable" line — a report that praises a loss-making, highly-geared
+    # stable" line. A report that praises a loss-making, highly-geared
     # company as healthy would be actively misleading to whoever reads it.
     SEV_PHRASE = {
         "good": "a strength",
-        "medium": "acceptable, though with room to improve",
-        "bad": "a concern",
+        "medium": "acceptable, with room for improvement",
+        "bad": "an area of concern",
         "unavailable": "not calculable from the figures provided",
     }
     severities = [liquidity_sev, profitability_sev, debt_sev, roe_sev, gross_margin_sev]
@@ -1959,29 +2026,33 @@ def generate_pdf():
     good_count = severities.count("good")
     if bad_count >= 2:
         overall_assessment = (
-            f"Taken together, {report_company} faces some financial challenges that "
-            "warrant attention, with more than one of the headline ratios above "
+            f"Taken together, {report_company} faces financial challenges that warrant "
+            "attention, with more than one of the headline ratios reviewed above "
             "falling into the weaker band."
         )
     elif bad_count == 1 or good_count < 3:
         overall_assessment = (
-            f"Taken together, {report_company} shows a mixed financial position — "
-            "strong in some areas, with room for improvement in others, as set out above."
+            f"Taken together, {report_company} presents a mixed financial position: "
+            "sound in some respects, with room for improvement in others, as set out "
+            "above."
         )
     else:
         overall_assessment = (
-            f"Taken together, {report_company} demonstrates a healthy financial "
-            "position and sound operational efficiency across the ratios calculated."
+            f"Taken together, {report_company} demonstrates a sound financial position "
+            "and satisfactory operational performance across the ratios calculated."
         )
 
     story.append(
         Paragraph(
             f"""
-            During {period_label if detected_year_a else 'the period reviewed'}, {report_company} recorded a
-            Current Ratio of {format_ratio(curr_ratio)} ({SEV_PHRASE.get(liquidity_sev, 'not calculable')}),
-            a Debt-to-Equity Ratio of {format_ratio(de_ratio)} ({SEV_PHRASE.get(debt_sev, 'not calculable')}),
-            and a Return on Equity of {format_ratio(roe, suffix='%')} ({SEV_PHRASE.get(roe_sev, 'not calculable')}).
-            {overall_assessment}
+            During {period_label}, {report_company} recorded a current ratio of
+            {format_ratio(curr_ratio)} ({SEV_PHRASE.get(liquidity_sev, 'not calculable')}),
+            a gearing (debt-to-equity) ratio of {format_ratio(de_ratio)}
+            ({SEV_PHRASE.get(debt_sev, 'not calculable')}), and a return on equity of
+            {format_ratio(roe, suffix='%')} ({SEV_PHRASE.get(roe_sev, 'not calculable')}).
+            {overall_assessment} This assessment should be considered alongside industry
+            benchmarks, historical performance and the company's own strategic context,
+            none of which a ratio calculation alone can capture.
             """,
             styles["BodyText"]
         )
