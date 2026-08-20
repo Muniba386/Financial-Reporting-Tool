@@ -2681,19 +2681,33 @@ elif page == "About":
     with st.container(border=True):
         st.markdown(
             f"""
-            <div style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
-                        font-size:1.3rem; color:{NAVY}; margin-bottom:0.6rem;">
-                Muniba Ashraf
+            <div style="display:flex; align-items:center; gap:1.1rem; margin-bottom:1.2rem;">
+              <div style="flex-shrink:0; width:3.4rem; height:3.4rem; border-radius:50%;
+                          background:{BRAND_NAVY}; display:flex; align-items:center;
+                          justify-content:center; box-shadow:0 2px 6px rgba(10,25,48,0.18);">
+                <span style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
+                             font-size:1.25rem; color:{BRAND_GOLD};">MA</span>
+              </div>
+              <div>
+                <div style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
+                            font-size:1.3rem; color:{NAVY}; line-height:1.25;">
+                    Muniba Ashraf
+                </div>
+                <div style="color:{GOLD}; font-size:0.85rem; font-weight:600; margin-top:0.1rem;">
+                    Accounting &amp; Finance Graduate &middot; Financial Analysis Tool Developer
+                </div>
+              </div>
             </div>
-            <div style="color:{MUTED}; font-size:0.98rem; line-height:1.7; max-width:640px;">
-                I'm a First Class Accounting &amp; Finance graduate with an interest in where
-                accounting meets code. During my degree, I kept noticing how mechanical ratio
-                analysis really is — the same fifteen to twenty ratios, recalculated by hand,
-                for every set of financial statements. So I built this tool to take that first
-                stage off an accountant's hands: upload a company's statements in whatever
-                format they happen to be in, and it extracts the figures, calculates the full
-                ratio set, and generates a client-ready report — while leaving the actual
-                judgement to you.
+            <div style="color:{MUTED}; font-size:0.98rem; line-height:1.7; max-width:660px;">
+                I am a First Class graduate in Accounting and Finance with a particular
+                interest in where the discipline meets software development. During my
+                degree, one thing became clear: ratio analysis is largely mechanical, the
+                same set of ratios recalculated by hand for every set of financial
+                statements. I built this tool to take that first stage off an accountant's
+                workload. Upload a company's statements in whatever format they happen to
+                be in, and the tool extracts the figures, calculates the full ratio set,
+                and produces a client-ready report, while leaving the professional
+                judgement where it belongs, with you.
             </div>
             """,
             unsafe_allow_html=True,
@@ -2701,12 +2715,13 @@ elif page == "About":
 
         st.markdown(
             f"""
-            <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-top:1.1rem;">
+            <div style="height:1px; background:{BORDER}; margin:1.15rem 0 1rem 0;"></div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
               {"".join(
                   f"<span style='background:{PANEL}; border:1px solid {BORDER}; color:{NAVY}; "
                   f"font-size:0.78rem; font-weight:600; padding:0.32rem 0.85rem; "
                   f"border-radius:20px; white-space:nowrap;'>{tag}</span>"
-                  for tag in ["BSc (Hons) Accounting & Finance — First Class", "Python", "Streamlit"]
+                  for tag in ["BSc (Hons) Accounting & Finance, First Class", "Python", "Streamlit"]
               )}
             </div>
             """,
@@ -2714,15 +2729,39 @@ elif page == "About":
         )
 
     st.write("")
+
+    highlight_cols = st.columns(3)
+    highlights = [
+        ("21", "Financial ratios calculated automatically across liquidity, profitability, efficiency, leverage and returns."),
+        ("Automated", "Statement extraction that reads Excel, CSV and text-based PDF uploads, whatever the layout or wording."),
+        ("Client-ready", "A polished, multi-page PDF report generated in one click, labelled with the company's own name."),
+    ]
+    for col, (stat, desc) in zip(highlight_cols, highlights):
+        with col:
+            st.markdown(
+                f"""
+                <div style="background:{PANEL}; border:1px solid {BORDER}; border-radius:8px;
+                            padding:1rem 1.1rem; height:100%;">
+                  <div style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
+                              font-size:1.3rem; color:{GOLD};">{stat}</div>
+                  <div style="color:{MUTED}; font-size:0.82rem; line-height:1.5; margin-top:0.3rem;">
+                      {desc}
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.write("")
     st.subheader("Get in touch")
     st.markdown(
         f"""
         <div style="display:flex; flex-wrap:wrap; gap:0.7rem; margin-top:0.4rem;">
-          <a class="about-contact-link" href="mailto:munibaashraf48@gmail.com">
-            ✉️ munibaashraf48@gmail.com
+          <a class="about-contact-link" href="https://mail.google.com/mail/?view=cm&fs=1&to=munibaashraf48@gmail.com" target="_blank">
+            &#9993; munibaashraf48@gmail.com
           </a>
           <a class="about-contact-link about-contact-link--primary" href="https://www.linkedin.com/in/muniba-ashraf/" target="_blank">
-            💼 LinkedIn
+            &#128188; LinkedIn
           </a>
         </div>
         """,
