@@ -370,6 +370,25 @@ def inject_custom_css():
                 font-size: 0.95rem !important;
             }}
         }}
+        /* On phone-width screens even the shrunk wordmark is wider than
+           its column's 180px min-width, so the text visually overflows
+           past the column boundary and collides with the "Home" tab
+           sitting right next to it — the row's horizontal-scroll fallback
+           doesn't help here because the column box itself, not the whole
+           row, is what's too narrow for the text. Simplest fix consistent
+           with how the logo already works everywhere else: below ~480px
+           (a typical phone width), drop the wordmark text entirely and
+           keep just the monogram mark, which needs far less width and
+           leaves the freed-up room for the actual nav tabs. */
+        @media (max-width: 480px) {{
+            .st-key-topnav .topnav-wordmark {{
+                display: none !important;
+            }}
+            .st-key-topnav [data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {{
+                min-width: 0 !important;
+                flex: 0 0 auto !important;
+            }}
+        }}
         /* Underline-tab nav rather than filled pill buttons — reads as an
            editorial/financial masthead rather than a row of app buttons. */
         .st-key-topnav button[kind="secondary"],
@@ -1457,6 +1476,21 @@ def generate_pdf():
     BRAND_GOLD = colors.HexColor("#9B6526")
     BRAND_SOFT = colors.HexColor("#F3EDE1")
 
+    # Wraps long header text (company names in particular have no fixed
+    # length) onto a second line within its column instead of overflowing
+    # past the cell border, which is what a plain string does in a
+    # reportlab Table when the text is wider than the column.
+    table_header_style = ParagraphStyle(
+        "TableHeaderWrap",
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=10,
+        textColor=colors.white,
+    )
+
+    def table_header(text):
+        return Paragraph(text, table_header_style)
+
     report_company = company_name_a or "Company A"
     detected_year_a = (st.session_state.get("a_meta") or {}).get("detected_year")
     period_label = f"the financial year ended {detected_year_a}" if detected_year_a else "the latest period available"
@@ -2064,19 +2098,29 @@ def generate_pdf():
     # misleading in a report meant to go to someone else.
 
     if b_is_real:
-        story.append(PageBreak())
+        # No forced PageBreak here — on most single-company-plus-comparison
+        # reports, "Overall Assessment" leaves a good deal of room on its
+        # page, and starting the appendix immediately below it (rather than
+        # jumping to a near-empty new page) reads as tighter and more
+        # deliberately laid out. KeepTogether only holds the heading and
+        # its first subheading together, so a genuinely full page still
+        # breaks cleanly before the appendix rather than orphaning the
+        # heading alone at the bottom.
+        story.append(Spacer(1, 20))
         story.append(
-            Paragraph(
-                f"<b>Appendix: Comparison with {company_name_b}</b>",
-                styles["Heading1"]
-            )
+            KeepTogether([
+                Paragraph(
+                    f"<b>Appendix: Comparison with {company_name_b}</b>",
+                    styles["Heading1"]
+                ),
+                Spacer(1, 10),
+                Paragraph("<b>Financial Figures</b>", styles["Heading2"]),
+                Spacer(1, 6),
+            ])
         )
-        story.append(Spacer(1, 10))
-        story.append(Paragraph("<b>Financial Figures</b>", styles["Heading2"]))
-        story.append(Spacer(1, 6))
 
         all_metrics_in_order = [m for _, group in FIELD_GROUPS for m in group]
-        raw_data = [["Metric", report_company, company_name_b]]
+        raw_data = [[table_header("Metric"), table_header(report_company), table_header(company_name_b)]]
         for m in all_metrics_in_order:
             raw_data.append([
                 METRIC_LABELS[m],
@@ -2097,16 +2141,16 @@ def generate_pdf():
         story.append(raw_table)
         story.append(Spacer(1, 20))
 
-        story.append(Paragraph("<b>Full Ratio Comparison</b>", styles["Heading2"]))
-        story.append(Spacer(1, 6))
-
         rows_a = compute_ratio_set(company_a)
         rows_b = compute_ratio_set(company_b)
-        comparison_data = [["Category", "Ratio", report_company, company_name_b]]
+        comparison_data = [[
+            table_header("Category"), table_header("Ratio"),
+            table_header(report_company), table_header(company_name_b),
+        ]]
         for (cat, label, val_a, _mkey_a, _raw_a), (_, _, val_b, _mkey_b, _raw_b) in zip(rows_a, rows_b):
             comparison_data.append([cat, label, val_a, val_b])
 
-        comparison_table = Table(comparison_data, colWidths=[80, 175, 85, 85], repeatRows=1)
+        comparison_table = Table(comparison_data, colWidths=[70, 145, 150, 150], repeatRows=1)
         comparison_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), BRAND_NAVY),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -2119,7 +2163,19 @@ def generate_pdf():
             ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, BRAND_SOFT]),
         ]))
-        story.append(comparison_table)
+        # The whole "Full Ratio Comparison" table (16 rows, comfortably
+        # under one A4 page) is kept together as a single unit — if it
+        # doesn't fit in the space left on the current page, the entire
+        # heading + table moves to the next page rather than splitting
+        # partway through with a repeated header row, which read as an
+        # awkward break in a client-facing report.
+        story.append(
+            KeepTogether([
+                Paragraph("<b>Full Ratio Comparison</b>", styles["Heading2"]),
+                Spacer(1, 6),
+                comparison_table,
+            ])
+        )
 
     doc.build(
         story,

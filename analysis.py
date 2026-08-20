@@ -290,9 +290,9 @@ RATIO_BANDS = {
     "return_on_assets": (True, [(10, "🟢", "Strong return on assets"), (5, "🟡", "Moderate return on assets"), (0, "🔴", "Below typical returns on assets")]),
     "return_on_capital_employed": (True, [(15, "🟢", "Strong return on capital employed"), (8, "🟡", "Moderate return on capital employed"), (0, "🔴", "Below typical returns on capital employed")]),
     "interest_coverage_ratio": (True, [(5, "🟢", "Comfortable interest cover"), (2, "🟡", "Adequate interest cover"), (0, "🔴", "Thin interest cover")]),
-    "debt_to_equity": (False, [(0.5, "🟢", "Conservative gearing"), (1.5, "🟡", "Moderate gearing"), (999999, "🔴", "Elevated gearing")]),
+    "debt_to_equity": (False, [(1.0, "🟢", "Conservative gearing"), (2.0, "🟡", "Moderate gearing"), (999999, "🔴", "Elevated gearing")]),
     "debt_ratio": (False, [(0.3, "🟢", "Low reliance on debt financing"), (0.6, "🟡", "Moderate reliance on debt financing"), (999999, "🔴", "High reliance on debt financing")]),
-    "debtor_days": (False, [(30, "🟢", "Prompt collection period"), (60, "🟡", "Typical collection period"), (999999, "🟡", "Extended collection period")]),
+    "debtor_days": (False, [(30, "🟢", "Prompt collection period"), (60, "🟡", "Typical collection period"), (999999, "🔴", "Extended collection period")]),
 }
 
 # Metrics deliberately given a neutral, non-judgemental read rather than a

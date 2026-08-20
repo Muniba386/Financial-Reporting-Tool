@@ -65,7 +65,8 @@ METRIC_SYNONYMS = {
         "profit/loss for the year", "net income for the year",
         "comprehensive income", "total comprehensive income",
         "profit for the financial year", "earnings for the year",
-        "net earnings for the year", "profit"
+        "net earnings for the year", "profit after taxation",
+        "net profit after tax", "profit attributable to shareholders"
     ],
     "interest_expense": [
         "interest expense", "finance costs", "finance cost",
@@ -106,11 +107,11 @@ METRIC_SYNONYMS = {
         "total assets", "total assets employed"
     ],
     "total_debt": [
-        "total debt", "total liabilities", "total borrowings",
+        "total debt", "total borrowings",
         "borrowings", "long term debt", "long-term debt", "total loans",
         "long term loans", "long-term loans", "loans", "bank loans",
-        "total liabilities and debt", "net debt",
-        "interest bearing debt", "interest-bearing loans and borrowings"
+        "net debt", "interest bearing debt",
+        "interest-bearing loans and borrowings", "total interest bearing debt"
     ],
     "equity": [
         "equity", "total equity", "shareholders equity",
@@ -149,6 +150,35 @@ METRIC_LABELS = {
 OPTIONAL_METRICS = {
     "operating_profit", "interest_expense", "inventory",
     "accounts_receivable", "cash", "accounts_payable", "total_assets",
+}
+
+# Guards against fuzzy-matching a row to a metric it merely resembles in
+# wording but is not, accounting-wise. Two concrete failure modes this
+# closes off:
+#   - "Profit Before Tax" is close enough in spelling to "profit after
+#     tax" / "profit for the year" to clear the fuzzy-match threshold, but
+#     PBT is not net profit (it excludes the tax charge), so treating it
+#     as one would overstate net margin and ROE.
+#   - "Total Liabilities" (the whole liabilities section, current and
+#     non-current together) is close enough in wording to "total current
+#     liabilities" to fuzzy-match current_liabilities, which would
+#     overstate current liabilities and understate the current/quick
+#     ratios.
+# A row containing any of these phrases is simply excluded from
+# candidacy for that metric; it's left for the reviewer to enter manually
+# rather than silently assigned a materially wrong figure.
+DISQUALIFYING_PHRASES = {
+    "net_profit": ["before tax", "before taxation", "pre tax", "pre-tax", "pretax"],
+}
+
+# Metrics whose whole synonym set is scoped to the "current" portion of
+# the balance sheet — a label that doesn't even contain the word "current"
+# cannot be a current_assets/current_liabilities line, no matter how close
+# the rest of the wording scores (e.g. "Total Liabilities" vs "total
+# current liabilities").
+REQUIRES_SUBSTRING = {
+    "current_assets": "current",
+    "current_liabilities": "current",
 }
 
 YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
@@ -206,6 +236,10 @@ def match_rows_to_metrics(row_labels, has_value, threshold=MATCH_THRESHOLD):
         if not norm:
             continue
         for metric, synonyms in METRIC_SYNONYMS.items():
+            if metric in REQUIRES_SUBSTRING and REQUIRES_SUBSTRING[metric] not in norm:
+                continue
+            if metric in DISQUALIFYING_PHRASES and any(p in norm for p in DISQUALIFYING_PHRASES[metric]):
+                continue
             best_for_row_metric = max(_label_score(norm, syn) for syn in synonyms)
             # Small tie-break nudge toward "Total X" lines over component
             # sub-lines with similar wording (e.g. "Total revenue" over
