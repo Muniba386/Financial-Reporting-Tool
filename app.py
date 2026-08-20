@@ -1,3 +1,4 @@
+import os
 import re
 import json
 import base64
@@ -84,6 +85,12 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# Book-style user manual, bundled alongside this file — see the sidebar
+# and Home page download buttons below. Guarded with os.path.exists so a
+# deployment without the PDF present simply hides the button rather than
+# crashing.
+MANUAL_PATH = "User_Manual_Financial_Ratio_Analysis_Tool.pdf"
 
 # ---------------- Brand / Theme ----------------
 # A warm, "old-ledger" navy-and-brass palette instead of a cool grey/white
@@ -1406,6 +1413,16 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
+if os.path.exists(MANUAL_PATH):
+    with open(MANUAL_PATH, "rb") as _manual_file:
+        st.sidebar.download_button(
+            "📖 Download the User Manual",
+            data=_manual_file,
+            file_name="User_Manual_Financial_Ratio_Analysis_Tool.pdf",
+            mime="application/pdf",
+            help="A complete, book-style guide to every feature — ideal on a first visit.",
+        )
+
 sync_company_data("a", uploaded_file_a, "Financial_data.xlsx", "Alpine Retail Ltd")
 sync_company_data("b", uploaded_file_b, "financial_data_company_b.xlsx", "Beacon Manufacturing Ltd")
 
@@ -2236,6 +2253,28 @@ if page == "Home":
         f"Developed by Muniba Ashraf · BSc (Hons) Accounting &amp; Finance</div>",
         unsafe_allow_html=True,
     )
+
+    if os.path.exists(MANUAL_PATH):
+        with st.container(border=True):
+            manual_cols = st.columns([5, 2])
+            with manual_cols[0]:
+                st.markdown(
+                    f"<div style='font-weight:700; color:{NAVY}; font-size:1rem;'>"
+                    f"📖 New here? Read the User Manual</div>"
+                    f"<div style='color:{MUTED}; font-size:0.85rem; margin-top:0.2rem;'>"
+                    f"A complete, book-style walkthrough of every page and feature, "
+                    f"written for someone using the tool for the very first time.</div>",
+                    unsafe_allow_html=True,
+                )
+            with manual_cols[1]:
+                with open(MANUAL_PATH, "rb") as _home_manual_file:
+                    st.download_button(
+                        "Download the Manual",
+                        data=_home_manual_file,
+                        file_name="User_Manual_Financial_Ratio_Analysis_Tool.pdf",
+                        mime="application/pdf",
+                        key="home_manual_download",
+                    )
 
     st.divider()
     st.header("Your Data")
