@@ -2678,10 +2678,27 @@ elif page == "About":
         "The person behind this tool, and how to get in touch.",
     )
 
+    about_stats = [
+        ("21", "ratios covered"),
+        ("Automated", "extraction"),
+        ("Client-ready", "PDF report"),
+    ]
+    about_stats_html = "".join(
+        (
+            f'<div style="flex:1; min-width:120px; padding:0 1rem;'
+            f'{" border-left:1px solid " + BORDER + ";" if i > 0 else ""}">'
+            f'<div style="font-family:\'Source Serif 4\', Georgia, serif; font-weight:700;'
+            f'font-size:1.15rem; color:{GOLD}; line-height:1.2;">{stat}</div>'
+            f'<div style="color:{MUTED}; font-size:0.78rem; margin-top:0.15rem;">{label}</div>'
+            f'</div>'
+        )
+        for i, (stat, label) in enumerate(about_stats)
+    )
+
     with st.container(border=True):
         st.markdown(
             f"""
-            <div style="display:flex; align-items:center; gap:1.1rem; margin-bottom:1.2rem;">
+            <div style="display:flex; align-items:center; gap:1.1rem; margin-bottom:1.3rem;">
               <div style="flex-shrink:0; width:3.4rem; height:3.4rem; border-radius:50%;
                           background:{BRAND_NAVY}; display:flex; align-items:center;
                           justify-content:center; box-shadow:0 2px 6px rgba(10,25,48,0.18);">
@@ -2698,7 +2715,8 @@ elif page == "About":
                 </div>
               </div>
             </div>
-            <div style="color:{MUTED}; font-size:0.98rem; line-height:1.7; max-width:660px;">
+            <div style="color:{MUTED}; font-size:0.98rem; line-height:1.7; max-width:660px;
+                        margin-bottom:1.4rem;">
                 I am a First Class graduate in Accounting and Finance with a particular
                 interest in where the discipline meets software development. During my
                 degree, one thing became clear: ratio analysis is largely mechanical, the
@@ -2709,14 +2727,8 @@ elif page == "About":
                 and produces a client-ready report, while leaving the professional
                 judgement where it belongs, with you.
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            f"""
-            <div style="height:1px; background:{BORDER}; margin:1.15rem 0 1rem 0;"></div>
-            <div style="display:flex; flex-wrap:wrap; gap:0.5rem;">
+            <div style="height:1px; background:{BORDER}; margin-bottom:1.1rem;"></div>
+            <div style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1.3rem;">
               {"".join(
                   f"<span style='background:{PANEL}; border:1px solid {BORDER}; color:{NAVY}; "
                   f"font-size:0.78rem; font-weight:600; padding:0.32rem 0.85rem; "
@@ -2724,33 +2736,13 @@ elif page == "About":
                   for tag in ["BSc (Hons) Accounting & Finance, First Class", "Python", "Streamlit"]
               )}
             </div>
+            <div style="height:1px; background:{BORDER}; margin-bottom:1.1rem;"></div>
+            <div style="display:flex; flex-wrap:wrap;">
+              {about_stats_html}
+            </div>
             """,
             unsafe_allow_html=True,
         )
-
-    st.write("")
-
-    highlight_cols = st.columns(3)
-    highlights = [
-        ("21", "Financial ratios calculated automatically across liquidity, profitability, efficiency, leverage and returns."),
-        ("Automated", "Statement extraction that reads Excel, CSV and text-based PDF uploads, whatever the layout or wording."),
-        ("Client-ready", "A polished, multi-page PDF report generated in one click, labelled with the company's own name."),
-    ]
-    for col, (stat, desc) in zip(highlight_cols, highlights):
-        with col:
-            st.markdown(
-                f"""
-                <div style="background:{PANEL}; border:1px solid {BORDER}; border-radius:8px;
-                            padding:1rem 1.1rem; height:100%;">
-                  <div style="font-family:'Source Serif 4', Georgia, serif; font-weight:700;
-                              font-size:1.3rem; color:{GOLD};">{stat}</div>
-                  <div style="color:{MUTED}; font-size:0.82rem; line-height:1.5; margin-top:0.3rem;">
-                      {desc}
-                  </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
 
     st.write("")
     st.subheader("Get in touch")
